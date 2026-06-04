@@ -72,11 +72,16 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                "/api/usuarios",
-                                "/api/usuarios/login"
+                                "/api/auth/login",
+                                "/api/auth/registro-cliente",
+                                "/api/auth/bootstrap-admin",
+                                "/v3/api-docs/**",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html"
                         ).permitAll()
-                        .requestMatchers("/api/usuarios").hasAuthority("ADMIN") // Solo ADMIN puede ver todos los usuarios
-                        .requestMatchers(HttpMethod.POST, "/api/categorias").hasAuthority("ADMIN") // Solo ADMIN puede crear categorías
+                        .requestMatchers("/api/usuarios/**").hasAuthority("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/productos/**").hasAuthority("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/categorias").hasAuthority("ADMIN")
                         .anyRequest().permitAll()
                 )
                 .addFilterBefore(new JwtAuthorizationFilter(this), UsernamePasswordAuthenticationFilter.class);

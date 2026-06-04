@@ -3,6 +3,8 @@ package com.example.mikespizzaspring.model;
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "producto")
@@ -34,6 +36,9 @@ public class Producto {
 
     @Column(name = "activo", nullable = false)
     private Boolean activo = true;
+
+    @OneToMany(mappedBy = "producto", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<ProductoPrecio> precios = new HashSet<>();
 
     public Long getIdProducto() {
         return idProducto;
@@ -97,6 +102,19 @@ public class Producto {
 
     public void setActivo(Boolean activo) {
         this.activo = activo;
+    }
+
+    public Set<ProductoPrecio> getPrecios() {
+        return precios;
+    }
+
+    public void setPrecios(Set<ProductoPrecio> precios) {
+        this.precios = precios;
+    }
+
+    public void addPrecio(ProductoPrecio precio) {
+        this.precios.add(precio);
+        precio.setProducto(this);
     }
 
 }
