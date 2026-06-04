@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Epilogue:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #536500;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #adcc30;
+  --color-on-primary-container: #445400;
+  --color-inverse-primary: #b4d337;
+  --color-secondary: #1e6b40;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #a6f4bd;
+  --color-on-secondary-container: #257246;
+  --color-tertiary: #bf0229;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #ffa9a7;
+  --color-on-tertiary-container: #a00020;
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+  --color-background: #f8f9fa;
+  --color-on-background: #191c1d;
+  --color-surface-dim: #d9dadb;
+  --color-surface-bright: #f8f9fa;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f3f4f5;
+  --color-surface-container: #edeeef;
+  --color-surface-container-high: #e7e8e9;
+  --color-surface-container-highest: #e1e3e4;
+
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Epilogue", sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-background);
+  color: var(--color-on-background);
+}
+

@@ -1,0 +1,6 @@
+{
+  "name": "Mike's Oven Pizza",
+  "description": "Una aplicación web de comida artesanal para pedir las mejores pizzas de masa madre directamente a tu mesa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
