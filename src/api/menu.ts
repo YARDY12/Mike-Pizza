@@ -85,6 +85,7 @@ const mapBackendCategoryName = (raw: unknown): Category => {
     if (s.includes('comple') || s.includes('extra') || s.includes('entr')) return 'Complementos';
     if (s.includes('vege')) return 'Vegetarianas';
     if (s.includes('espec') || s.includes('gour')) return 'Especialidades';
+    return raw.trim();
   }
 
   // Safe default (keeps UI filters working)
@@ -124,7 +125,7 @@ const normalizeMenuItem = (raw: RawMenuItem): MenuItem | null => {
 };
 
 export const fetchMenuItems = async (): Promise<MenuItem[]> => {
-  const endpoint = import.meta.env.VITE_MENU_ENDPOINT || '/products';
+  const endpoint = import.meta.env.VITE_MENU_ENDPOINT || 'productos';
   const res = await api.get<unknown>(endpoint);
 
   const data = (res.data ?? []) as unknown;

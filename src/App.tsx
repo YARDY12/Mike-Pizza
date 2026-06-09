@@ -26,6 +26,48 @@ import { INITIAL_MENU_ITEMS } from './data';
 import { fetchMenuItems } from './api/menu';
 import { tokenStorage } from './api/tokenStorage';
 
+const USER_STORAGE_KEY = 'mop_user';
+
+const loadStoredUser = (): UserProfile | null => {
+  try {
+    const raw = localStorage.getItem(USER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as UserProfile;
+    if (!parsed || typeof parsed !== 'object') return null;
+    console.log('[App] restored stored user', parsed);
+    return parsed;
+  } catch (error) {
+    console.error('[App] failed to restore user from storage', error);
+    return null;
+  }
+};
+
+const saveStoredUser = (user: UserProfile) => {
+  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+  console.log('[App] saved user to storage', user);
+};
+
+const getStoredUserPhone = (email: string, fallbackPhone?: string): string | undefined => {
+  if (fallbackPhone) return fallbackPhone;
+  const stored = loadStoredUser();
+  if (stored?.email === email && stored.phone) {
+    console.log('[App] recovered phone from stored user for', email, stored.phone);
+    return stored.phone;
+  }
+  return undefined;
+};
+
+const clearStoredUser = () => {
+  localStorage.removeItem(USER_STORAGE_KEY);
+};
+
+const DEFAULT_USER_PROFILE: UserProfile = {
+  fullName: '',
+  email: '',
+  isAuthenticated: false,
+  role: 'cliente'
+};
+
 export default function App() {
   // Navigation State
   const [activeView, setActiveView] = useState<string>('home');
@@ -34,16 +76,15 @@ export default function App() {
   // Dynamic products list from data.ts
   const [menuItems, setMenuItems] = useState<MenuItem[]>(INITIAL_MENU_ITEMS);
 
-  // Authenticated User State (defaults to Customer role: 'cliente')
-  const [user, setUser] = useState<UserProfile>({
-    fullName: '',
-    email: '',
-    isAuthenticated: false,
-    role: 'cliente'
-  });
+  // Authenticated User State (restored from storage on first render)
+  const [user, setUser] = useState<UserProfile>(() => loadStoredUser() ?? DEFAULT_USER_PROFILE);
 
   // Simple Notification Toast State
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
+
+  useEffect(() => {
+    console.log('[App] mounted', { user, activeView: 'home' });
+  }, []);
 
   const triggerToast = (message: string, type: 'success' | 'info' = 'success') => {
     setToast({ message, type });
@@ -270,9 +311,20 @@ export default function App() {
     return 'cliente';
   };
 
-  const handleLoginSuccess = (payload: { fullName: string; email: string; roles: string[] }) => {
+  const handleLoginSuccess = (payload: { fullName: string; email: string; roles: string[]; phone?: string }) => {
+    console.log('[App] handleLoginSuccess payload', payload);
     const role = mapBackendRolesToAppRole(payload.roles);
-    setUser({ fullName: payload.fullName, email: payload.email, isAuthenticated: true, role });
+    const phone = getStoredUserPhone(payload.email, payload.phone);
+    const userProfile: UserProfile = {
+      fullName: payload.fullName,
+      email: payload.email,
+      phone,
+      isAuthenticated: true,
+      role,
+    };
+    console.log('[App] saving user profile', userProfile);
+    setUser(userProfile);
+    saveStoredUser(userProfile);
     triggerToast(`¡Bienvenido al Club de Mike, ${payload.fullName}! Descuento de socio activado.`);
     if (cart.length > 0) {
       handleNavigate('cart');
@@ -281,8 +333,18 @@ export default function App() {
     }
   };
 
-  const handleRegisterSuccess = (fullName: string, email: string) => {
-    setUser({ fullName, email, isAuthenticated: true, role: 'cliente' });
+  const handleRegisterSuccess = (fullName: string, email: string, phone?: string) => {
+    console.log('[App] handleRegisterSuccess values', { fullName, email, phone });
+    const userProfile: UserProfile = {
+      fullName,
+      email,
+      phone,
+      isAuthenticated: true,
+      role: 'cliente',
+    };
+    console.log('[App] saving user profile', userProfile);
+    setUser(userProfile);
+    saveStoredUser(userProfile);
     triggerToast(`¡Bienvenido, ${fullName}! Te has registrado con éxito.`);
     if (cart.length > 0) {
       handleNavigate('cart');
@@ -295,6 +357,7 @@ export default function App() {
   const handleRoleSwitch = (newRole: 'cliente' | 'mesero' | 'cocinero' | 'repartidor' | 'admin') => {
     setUser(prev => ({
       ...prev,
+      isAuthenticated: newRole !== 'cliente',
       role: newRole,
       fullName: newRole === 'admin' 
         ? 'Chef Mike Admin' 
@@ -410,10 +473,13 @@ export default function App() {
             orders={orders} 
             onNavigate={handleNavigate} 
             onUpdateProfile={(fullName, email, phone) => {
-              setUser(prev => ({ ...prev, fullName, email, phone }));
+              const updatedUser = { ...user, fullName, email, phone };
+              setUser(updatedUser);
+              saveStoredUser(updatedUser);
             }} 
             onLogout={() => {
               tokenStorage.clear();
+              clearStoredUser();
               setUser({
                 fullName: '',
                 email: '',

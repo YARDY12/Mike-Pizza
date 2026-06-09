@@ -15,6 +15,7 @@ interface ProfileViewProps {
 }
 
 export default function ProfileView({ user, orders, onNavigate, onUpdateProfile, onLogout }: ProfileViewProps) {
+  console.debug('[ProfileView] received user prop', user);
   // Editing state
   const [isEditing, setIsEditing] = useState(false);
   const [fullName, setFullName] = useState(user.fullName);

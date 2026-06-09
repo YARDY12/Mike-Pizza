@@ -24,10 +24,10 @@ export const createProducto = async (payload: CreateProductoPayload): Promise<un
   form.append('stock', String(payload.stock));
   form.append('imagen', payload.imagen);
 
-  const res = await api.post<unknown>('/productos', form);
+  const res = await api.post<unknown>('productos', form);
   return res.data;
 };
 
 export const deleteProducto = async (id: string | number): Promise<void> => {
-  await api.delete(`/productos/${id}`);
+  await api.delete(`productos/${id}`);
 };

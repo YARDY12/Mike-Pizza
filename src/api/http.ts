@@ -21,12 +21,28 @@ api.interceptors.request.use((config) => {
       (config.headers as any).Authorization = `Bearer ${token}`;
     }
   }
+
+  console.debug('[API] request', {
+    method: config.method,
+    url: `${config.baseURL ?? ''}${config.url ?? ''}`,
+    data: config.data,
+    headers: config.headers instanceof AxiosHeaders ? config.headers.toJSON() : config.headers,
+  });
+
   return config;
 });
 
 api.interceptors.response.use(
   (res) => res,
   (error) => {
+    console.error('[API] response error', {
+      url: error?.config?.url,
+      method: error?.config?.method,
+      status: error?.response?.status,
+      data: error?.response?.data,
+      message: error?.message,
+      headers: error?.response?.headers,
+    });
     if (error?.response?.status === 401) {
       tokenStorage.clear();
     }

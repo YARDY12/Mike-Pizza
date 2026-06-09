@@ -6,7 +6,7 @@ import { tokenStorage } from '../api/tokenStorage';
 
 interface LoginViewProps {
   onNavigate: (view: string) => void;
-  onLoginSuccess: (payload: { fullName: string; email: string; roles: string[] }) => void;
+  onLoginSuccess: (payload: { fullName: string; email: string; roles: string[]; phone?: string }) => void;
 }
 
 export default function LoginView({ onNavigate, onLoginSuccess }: LoginViewProps) {
@@ -29,8 +29,10 @@ export default function LoginView({ onNavigate, onLoginSuccess }: LoginViewProps
 
     setLoading(true);
     setError('');
+    console.debug('[LoginView] submit', { email, password: password ? '••••••••' : '' });
     try {
       const res = await login({ email, password });
+      console.debug('[LoginView] login response', res);
       if (!res?.token) {
         setError('No se recibió token del servidor.');
         return;
@@ -39,15 +41,21 @@ export default function LoginView({ onNavigate, onLoginSuccess }: LoginViewProps
       tokenStorage.set(res.token);
 
       const fullName = `${res.nombre ?? ''} ${res.apellido ?? ''}`.trim() || email.split('@')[0];
-      onLoginSuccess({
+      const loginPayload = {
         fullName,
         email: res.email ?? email,
         roles: Array.isArray(res.roles) ? res.roles : [],
-      });
+        phone: res.telefono ?? (res as any).phone ?? undefined,
+      };
+      console.debug('[LoginView] login payload sent to app', loginPayload);
+      onLoginSuccess(loginPayload);
     } catch (err: any) {
+      console.error('[LoginView] login error', err);
       const status = err?.response?.status;
       if (status === 401) {
         setError('Credenciales inválidas.');
+      } else if (status === 404) {
+        setError('Endpoint de login no encontrado. Revisa la URL de backend.');
       } else {
         setError('No se pudo iniciar sesión. Revisa el backend y vuelve a intentar.');
       }

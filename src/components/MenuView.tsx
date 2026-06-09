@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Plus, SlidersHorizontal, Check } from 'lucide-react';
 import { MenuItem } from '../types';
@@ -13,7 +13,7 @@ interface MenuViewProps {
 export default function MenuView({ onSelectItem, onAddToCart, menuItems: menuItemsProp }: MenuViewProps) {
   // Filters State
   const [selectedSize, setSelectedSize] = useState<'Personal' | 'Mediana' | 'Familiar' | 'Mega'>('Mediana');
-  const [selectedCategories, setSelectedCategories] = useState<string[]>(['Clásicas']);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<string>('Relevancia');
 
   // Category change wrapper
@@ -28,6 +28,18 @@ export default function MenuView({ onSelectItem, onAddToCart, menuItems: menuIte
   };
 
   const menuItems = menuItemsProp || INITIAL_MENU_ITEMS;
+  const knownCategoryOrder = ['Clásicas', 'Especialidades', 'Vegetarianas', 'Complementos', 'Bebidas', 'Postres'];
+  const availableCategories = Array.from(new Set(menuItems.map(item => item.category)));
+  const allCategories = [
+    ...knownCategoryOrder.filter(cat => availableCategories.includes(cat)),
+    ...availableCategories.filter(cat => !knownCategoryOrder.includes(cat)).sort(),
+  ];
+
+  useEffect(() => {
+    if (allCategories.length > 0 && selectedCategories.length === 0) {
+      setSelectedCategories(allCategories);
+    }
+  }, [allCategories, selectedCategories]);
 
   // Filter & sort logic
   const filteredItems = menuItems.filter(item => {
@@ -101,7 +113,7 @@ export default function MenuView({ onSelectItem, onAddToCart, menuItems: menuIte
         <div className="bg-white p-6 rounded-xl shadow-[0px_4px_20px_rgba(0,10,5,0.01)] border border-gray-100">
           <h3 className="font-bold text-sm text-on-surface-variant font-display mb-4 uppercase tracking-wider">Categorías</h3>
           <div className="space-y-3">
-            {['Clásicas', 'Especialidades', 'Vegetarianas', 'Complementos', 'Bebidas', 'Postres'].map(cat => (
+            {allCategories.map(cat => (
               <label key={cat} className="flex items-center space-x-3 cursor-pointer group">
                 <input
                   type="checkbox"
@@ -147,10 +159,10 @@ export default function MenuView({ onSelectItem, onAddToCart, menuItems: menuIte
           <div className="text-center py-24 bg-white rounded-xl border border-gray-100">
             <p className="text-on-surface-variant text-lg">No encontramos productos en esta combinación de filtros.</p>
             <button 
-              onClick={() => setSelectedCategories(['Clásicas', 'Especialidades', 'Vegetarianas'])}
+              onClick={() => setSelectedCategories([...allCategories])}
               className="mt-4 text-primary font-bold hover:underline"
             >
-              Mostrar todas las Pizzas
+              Mostrar todo el menú
             </button>
           </div>
         ) : (

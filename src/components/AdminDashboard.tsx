@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   TrendingUp, TrendingDown, ClipboardList, Timer, ShieldCheck, 
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { CartItem, MenuItem, UserProfile, ServerOrder } from '../types';
 import { createProducto, deleteProducto } from '../api/productos';
+import { fetchCategoriasProducto, CategoriaProducto } from '../api/categorias';
 
 interface AdminDashboardProps {
   orders: ServerOrder[];
@@ -34,8 +35,9 @@ export default function AdminDashboard({
   const [newPizzaPricePersonal, setNewPizzaPricePersonal] = useState('');
   const [newPizzaPriceMediano, setNewPizzaPriceMediano] = useState('');
   const [newPizzaPriceFamiliar, setNewPizzaPriceFamiliar] = useState('');
-  const [newPizzaCategory, setNewPizzaCategory] = useState<'Clásicas' | 'Especialidades' | 'Vegetarianas' | 'Complementos' | 'Bebidas' | 'Postres'>('Clásicas');
+  const [newPizzaCategory, setNewPizzaCategory] = useState('Clásicas');
   const [newPizzaDesc, setNewPizzaDesc] = useState('');
+  const [categories, setCategories] = useState<CategoriaProducto[]>([]);
   const [newPizzaStock, setNewPizzaStock] = useState('10');
   const [newPizzaImageFile, setNewPizzaImageFile] = useState<File | null>(null);
   const [savingProduct, setSavingProduct] = useState(false);
@@ -68,6 +70,28 @@ export default function AdminDashboard({
   const handleRemoveIngredient = (tag: string) => {
     setNewPizzaIngredients(prev => prev.filter(t => t !== tag));
   };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchCategoriasProducto()
+      .then((cats) => {
+        if (cancelled) return;
+        setCategories(cats);
+        if (cats.length > 0) {
+          setNewCategoriaId(String(cats[0].idCategoriaProducto));
+          setNewPizzaCategory(cats[0].nombre);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCategories([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -138,7 +162,8 @@ export default function AdminDashboard({
       alert(`¡Producto "${newPizzaName}" creado en el servidor!`);
 
       // reset form
-      setNewCategoriaId('');
+      setNewCategoriaId(categories.length > 0 ? String(categories[0].idCategoriaProducto) : '');
+      setNewPizzaCategory(categories.length > 0 ? categories[0].nombre : 'Clásicas');
       setNewPizzaName('');
       setNewPizzaPricePersonal('');
       setNewPizzaPriceMediano('');
@@ -677,15 +702,32 @@ export default function AdminDashboard({
               <form onSubmit={handleSaveProduct} className="p-6 space-y-4 max-h-[500px] overflow-y-auto">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2 sm:col-span-1">
-                    <label className="text-xs font-bold text-slate-600 block mb-1">ID Categoría (backend)</label>
-                    <input
-                      type="number"
-                      placeholder="Ej. 1"
+                    <label className="text-xs font-bold text-slate-600 block mb-1">Categoría</label>
+                    <select
                       value={newCategoriaId}
-                      onChange={e => setNewCategoriaId(e.target.value)}
-                      className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium font-sans"
+                      onChange={(e) => {
+                        setNewCategoriaId(e.target.value);
+                        const selected = categories.find(cat => String(cat.idCategoriaProducto) === e.target.value);
+                        if (selected) {
+                          setNewPizzaCategory(selected.nombre);
+                        }
+                      }}
+                      className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium text-slate-700"
                       required
-                    />
+                    >
+                      {categories.length === 0 ? (
+                        <option value="">Cargando categorías...</option>
+                      ) : (
+                        categories.map(cat => (
+                          <option key={cat.idCategoriaProducto} value={cat.idCategoriaProducto}>
+                            {cat.nombre}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                    {categories.length === 0 && (
+                      <p className="text-[10px] text-slate-500 mt-1">No se encontraron categorías en el backend.</p>
+                    )}
                   </div>
                   <div className="col-span-2 sm:col-span-1">
                     <label className="text-xs font-bold text-slate-600 block mb-1">Nombre de la Pizza</label>
@@ -697,21 +739,6 @@ export default function AdminDashboard({
                       className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium"
                       required
                     />
-                  </div>
-                  <div className="col-span-2 sm:col-span-1">
-                    <label className="text-xs font-bold text-slate-600 block mb-1">Categoría</label>
-                    <select 
-                      value={newPizzaCategory}
-                      onChange={e => setNewPizzaCategory(e.target.value as any)}
-                      className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium text-slate-700"
-                    >
-                      <option value="Clásicas">Clásicas</option>
-                      <option value="Especialidades">Especialidades</option>
-                      <option value="Vegetarianas">Vegetarianas</option>
-                      <option value="Complementos">Complementos</option>
-                      <option value="Bebidas">Bebidas</option>
-                      <option value="Postres">Postres</option>
-                    </select>
                   </div>
                 </div>
 

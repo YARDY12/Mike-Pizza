@@ -11,7 +11,8 @@ export interface MenuItem {
   name: string;
   description: string;
   price: number;
-  category: 'Clásicas' | 'Especialidades' | 'Vegetarianas' | 'Complementos' | 'Bebidas' | 'Postres';
+  // Categories come from backend data and can be normalized in the UI.
+  category: string;
   image: string;
   isPopular?: boolean;
   isNew?: boolean;

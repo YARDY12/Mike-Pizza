@@ -1,22 +1,27 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Mail, Lock, User, Sparkles } from 'lucide-react';
+import { register } from '../api/auth';
+import { tokenStorage } from '../api/tokenStorage';
 
 interface RegisterViewProps {
   onNavigate: (view: string) => void;
-  onRegisterSuccess: (fullName: string, email: string) => void;
+  onRegisterSuccess: (fullName: string, email: string, phone?: string) => void;
 }
 
 export default function RegisterView({ onNavigate, onRegisterSuccess }: RegisterViewProps) {
-  const [fullName, setFullName] = useState('');
+  const [nombre, setNombre] = useState('');
+  const [apellido, setApellido] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [phone, setPhone] = useState('');
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName || !email || !password) {
+    if (!nombre || !apellido || !email || !password) {
       setError('Por favor completa todos los campos.');
       return;
     }
@@ -29,7 +34,45 @@ export default function RegisterView({ onNavigate, onRegisterSuccess }: Register
       return;
     }
 
-    onRegisterSuccess(fullName, email);
+    setLoading(true);
+    setError('');
+    console.log('[RegisterView] submit', { nombre, apellido, email, telefono: phone.trim() || undefined });
+
+    try {
+      const res = await register({
+        nombre,
+        apellido,
+        email,
+        password,
+        telefono: phone.trim() || undefined,
+      });
+      console.log('[RegisterView] register response', res);
+
+      if (res.token) {
+        tokenStorage.set(res.token);
+      }
+
+      const registeredName = `${res.nombre ?? nombre}${res.apellido ? ` ${res.apellido}` : ''}`.trim();
+      const registerPayload = {
+        fullName: registeredName,
+        email: res.email ?? email,
+        phone: phone.trim() || res.telefono || (res as any).phone || undefined,
+      };
+      console.log('[RegisterView] register payload sent to app', registerPayload);
+      onRegisterSuccess(registerPayload.fullName, registerPayload.email, registerPayload.phone);
+    } catch (err: any) {
+      console.error('[RegisterView] register error', err);
+      const status = err?.response?.status;
+      if (status === 400) {
+        setError('Error en el registro. Revisa los datos e intenta de nuevo.');
+      } else if (status === 404) {
+        setError('Endpoint de registro no encontrado. Revisa la URL de backend.');
+      } else {
+        setError('No se pudo registrar. Revisa el backend y vuelve a intentar.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -85,10 +128,10 @@ export default function RegisterView({ onNavigate, onRegisterSuccess }: Register
               </div>
             )}
 
-            {/* Full Name field */}
+            {/* First name field */}
             <div className="space-y-1">
-              <label className="block font-bold text-xs text-on-surface uppercase tracking-wider font-sans mb-1" htmlFor="fullName">
-                Nombre Completo
+              <label className="block font-bold text-xs text-on-surface uppercase tracking-wider font-sans mb-1" htmlFor="nombre">
+                Nombre
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
@@ -96,14 +139,30 @@ export default function RegisterView({ onNavigate, onRegisterSuccess }: Register
                 </span>
                 <input 
                   type="text"
-                  id="fullName"
-                  value={fullName}
-                  onChange={(e) => { setFullName(e.target.value); setError(''); }}
-                  placeholder="Tu nombre y apellido"
+                  id="nombre"
+                  value={nombre}
+                  onChange={(e) => { setNombre(e.target.value); setError(''); }}
+                  placeholder="Renzo"
                   className="w-full bg-white border border-outline-variant rounded-lg py-3.5 pl-10 pr-4 font-sans text-sm text-on-surface focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-all"
                   required
                 />
               </div>
+            </div>
+
+            {/* Last name field */}
+            <div className="space-y-1">
+              <label className="block font-bold text-xs text-on-surface uppercase tracking-wider font-sans mb-1" htmlFor="apellido">
+                Apellido
+              </label>
+              <input 
+                type="text"
+                id="apellido"
+                value={apellido}
+                onChange={(e) => { setApellido(e.target.value); setError(''); }}
+                placeholder="Zavaleta"
+                className="w-full bg-white border border-outline-variant rounded-lg py-3.5 pl-4 pr-4 font-sans text-sm text-on-surface focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-all"
+                required
+              />
             </div>
 
             {/* Email field */}
@@ -125,6 +184,21 @@ export default function RegisterView({ onNavigate, onRegisterSuccess }: Register
                   required
                 />
               </div>
+            </div>
+
+            {/* Phone field */}
+            <div className="space-y-1">
+              <label className="block font-bold text-xs text-on-surface uppercase tracking-wider font-sans mb-1" htmlFor="phone">
+                Teléfono
+              </label>
+              <input
+                type="tel"
+                id="phone"
+                value={phone}
+                onChange={(e) => { setPhone(e.target.value); setError(''); }}
+                placeholder="Ej. 946075308"
+                className="w-full bg-white border border-outline-variant rounded-lg py-3.5 pl-4 pr-4 font-sans text-sm text-on-surface focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-all"
+              />
             </div>
 
             {/* Password field */}
@@ -166,9 +240,10 @@ export default function RegisterView({ onNavigate, onRegisterSuccess }: Register
             {/* Submit */}
             <button 
               type="submit"
-              className="w-full py-3.5 bg-secondary text-white font-bold rounded-lg shadow-md hover:bg-primary active:scale-[0.98] transition-all cursor-pointer font-display text-sm mt-4"
+              disabled={loading}
+              className={`w-full py-3.5 bg-secondary text-white font-bold rounded-lg shadow-md hover:bg-primary active:scale-[0.98] transition-all font-display text-sm mt-4 ${loading ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
             >
-              Registrarse Gratis
+              {loading ? 'Registrando...' : 'Registrarse Gratis'}
             </button>
           </form>
 
