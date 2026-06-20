@@ -6,8 +6,9 @@ import {
   Settings, LogOut, Search, Bell, BarChart2, DollarSign, Leaf, Map, X 
 } from 'lucide-react';
 import { CartItem, MenuItem, UserProfile, ServerOrder } from '../types';
-import { createProducto, deleteProducto } from '../api/productos';
+import { createProducto, createSimpleProducto, deleteProducto } from '../api/productos';
 import { fetchCategoriasProducto, CategoriaProducto } from '../api/categorias';
+import { fetchUsuarios, AdminUser } from '../api/usuarios.ts';
 
 interface AdminDashboardProps {
   orders: ServerOrder[];
@@ -15,6 +16,7 @@ interface AdminDashboardProps {
   onAddMenuItem: (item: MenuItem) => void;
   onUpdateMenuItem: (item: MenuItem) => void;
   onDeleteMenuItem: (id: string) => void;
+  onNavigate: (view: string) => void;
 }
 
 export default function AdminDashboard({ 
@@ -22,19 +24,22 @@ export default function AdminDashboard({
   menuItems, 
   onAddMenuItem, 
   onUpdateMenuItem, 
-  onDeleteMenuItem 
+  onDeleteMenuItem,
+  onNavigate
 }: AdminDashboardProps) {
   const [adminTab, setAdminTab] = useState<'control' | 'menu' | 'users' | 'reports'>('control');
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Forms state for adding a new pizza
+  const [newProductMode, setNewProductMode] = useState<'pizza' | 'simple'>('pizza');
   const [newCategoriaId, setNewCategoriaId] = useState('');
   const [newPizzaName, setNewPizzaName] = useState('');
-  // Backend expects 3 explicit prices
+  // Backend expects 3 explicit prices for pizzas
   const [newPizzaPricePersonal, setNewPizzaPricePersonal] = useState('');
   const [newPizzaPriceMediano, setNewPizzaPriceMediano] = useState('');
   const [newPizzaPriceFamiliar, setNewPizzaPriceFamiliar] = useState('');
+  const [newSimplePrice, setNewSimplePrice] = useState('');
   const [newPizzaCategory, setNewPizzaCategory] = useState('Clásicas');
   const [newPizzaDesc, setNewPizzaDesc] = useState('');
   const [categories, setCategories] = useState<CategoriaProducto[]>([]);
@@ -42,34 +47,14 @@ export default function AdminDashboard({
   const [newPizzaImageFile, setNewPizzaImageFile] = useState<File | null>(null);
   const [savingProduct, setSavingProduct] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const [newPizzaIngredients, setNewPizzaIngredients] = useState<string[]>(['Mozzarella', 'Albahaca']);
-  const [ingredientInput, setIngredientInput] = useState('');
 
-  const [usersList, setUsersList] = useState<UserProfile[]>([
-    { fullName: 'Marco Polo', email: 'marco.polo@mikesoven.com', phone: '+51 987 8821', isAuthenticated: true, role: 'cocinero' },
-    { fullName: 'Sofía García', email: 's.garcia@gmail.com', phone: '+51 912 345 678', isAuthenticated: true, role: 'repartidor' },
-    { fullName: 'Ricardo Luna', email: 'rluna_pizza@outlook.com', phone: '+51 934 1029', isAuthenticated: true, role: 'cliente' },
-    { fullName: 'Juan Pérez', email: 'j.perez@mikesoven.com', phone: '+51 911 7732', isAuthenticated: true, role: 'mesero' },
-    { fullName: 'Chef Mike', email: 'mike.admin@mikesoven.com', phone: '+51 999 0000', isAuthenticated: true, role: 'admin' }
-  ]);
+  const [usersList, setUsersList] = useState<AdminUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState('');
 
   // Compute stats
   const totalSales = orders.reduce((sum, o) => sum + o.total, 0) + 42580.00; // pre-populated sales as requested
   const activeOrdersCount = orders.filter(o => o.status !== 'delivered').length;
-
-  const handleAddIngredient = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && ingredientInput.trim()) {
-      e.preventDefault();
-      if (!newPizzaIngredients.includes(ingredientInput.trim())) {
-        setNewPizzaIngredients(prev => [...prev, ingredientInput.trim()]);
-      }
-      setIngredientInput('');
-    }
-  };
-
-  const handleRemoveIngredient = (tag: string) => {
-    setNewPizzaIngredients(prev => prev.filter(t => t !== tag));
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -93,16 +78,35 @@ export default function AdminDashboard({
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setUsersLoading(true);
+    fetchUsuarios()
+      .then((users) => {
+        if (cancelled) return;
+        setUsersList(users);
+        setUsersError('');
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('[AdminDashboard] failed to fetch usuarios', error);
+        setUsersError('No se pudieron cargar los usuarios desde el backend.');
+      })
+      .finally(() => {
+        if (!cancelled) setUsersLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaveError('');
 
     if (!newCategoriaId || !newPizzaName) {
       setSaveError('Completa el ID de categoría y el nombre.');
-      return;
-    }
-    if (!newPizzaPricePersonal || !newPizzaPriceMediano || !newPizzaPriceFamiliar) {
-      setSaveError('Completa los 3 precios (Personal, Mediano, Familiar).');
       return;
     }
     if (!newPizzaStock) {
@@ -115,17 +119,10 @@ export default function AdminDashboard({
     }
 
     const categoriaIdNum = Number(newCategoriaId);
-    const precioPersonalNum = Number(newPizzaPricePersonal);
-    const precioMedianoNum = Number(newPizzaPriceMediano);
-    const precioFamiliarNum = Number(newPizzaPriceFamiliar);
     const stockNum = Number(newPizzaStock);
 
     if (!Number.isFinite(categoriaIdNum) || categoriaIdNum <= 0) {
       setSaveError('El ID de categoría debe ser un número válido.');
-      return;
-    }
-    if (![precioPersonalNum, precioMedianoNum, precioFamiliarNum].every(n => Number.isFinite(n) && n > 0)) {
-      setSaveError('Los precios deben ser números válidos mayores a 0.');
       return;
     }
     if (!Number.isInteger(stockNum) || stockNum < 0) {
@@ -133,26 +130,64 @@ export default function AdminDashboard({
       return;
     }
 
+    if (newProductMode === 'pizza') {
+      if (!newPizzaPricePersonal || !newPizzaPriceMediano || !newPizzaPriceFamiliar) {
+        setSaveError('Completa los 3 precios (Personal, Mediano, Familiar).');
+        return;
+      }
+    } else {
+      if (!newSimplePrice) {
+        setSaveError('Completa el precio del producto simple.');
+        return;
+      }
+    }
+
+    const precioPersonalNum = Number(newPizzaPricePersonal);
+    const precioMedianoNum = Number(newPizzaPriceMediano);
+    const precioFamiliarNum = Number(newPizzaPriceFamiliar);
+    const simplePriceNum = Number(newSimplePrice);
+
+    if (newProductMode === 'pizza' && ![precioPersonalNum, precioMedianoNum, precioFamiliarNum].every(n => Number.isFinite(n) && n > 0)) {
+      setSaveError('Los precios deben ser números válidos mayores a 0.');
+      return;
+    }
+    if (newProductMode === 'simple' && (!Number.isFinite(simplePriceNum) || simplePriceNum <= 0)) {
+      setSaveError('El precio debe ser un número válido mayor a 0.');
+      return;
+    }
+
     setSavingProduct(true);
     try {
-      const created = await createProducto({
-        categoriaId: categoriaIdNum,
-        nombre: newPizzaName,
-        descripcion: newPizzaDesc,
-        precioPersonal: precioPersonalNum,
-        precioMediano: precioMedianoNum,
-        precioFamiliar: precioFamiliarNum,
-        stock: stockNum,
-        imagen: newPizzaImageFile,
-      });
+      const created = newProductMode === 'pizza'
+        ? await createProducto({
+            categoriaId: categoriaIdNum,
+            nombre: newPizzaName,
+            descripcion: newPizzaDesc,
+            precioPersonal: precioPersonalNum,
+            precioMediano: precioMedianoNum,
+            precioFamiliar: precioFamiliarNum,
+            stock: stockNum,
+            imagen: newPizzaImageFile,
+          })
+        : await createSimpleProducto({
+            categoriaId: categoriaIdNum,
+            nombre: newPizzaName,
+            descripcion: newPizzaDesc,
+            precio: simplePriceNum,
+            stock: stockNum,
+            imagen: newPizzaImageFile,
+          });
 
-      // Map backend Producto to our MenuItem shape (minimal, safe mapping)
       const createdObj = (created ?? {}) as any;
       const newItem: MenuItem = {
         id: String(createdObj.idProducto ?? createdObj.id ?? newPizzaName.toLowerCase().replace(/\s+/g, '-')),
         name: String(createdObj.nombre ?? newPizzaName),
-        description: String(createdObj.descripcion ?? newPizzaDesc ?? 'Hecha con nuestra masa madre fermentada de 48 horas e ingredientes frescos.'),
-        price: typeof createdObj.precio === 'number' ? createdObj.precio : precioMedianoNum,
+        description: String(createdObj.descripcion ?? newPizzaDesc ?? 'Hecho con ingredientes frescos y la receta de Mike Oven.'),
+        price: typeof createdObj.precio === 'number'
+          ? createdObj.precio
+          : newProductMode === 'pizza'
+            ? precioMedianoNum
+            : simplePriceNum,
         category: newPizzaCategory,
         image: String(createdObj.imagenUrl ?? ''),
         isNew: true,
@@ -161,17 +196,16 @@ export default function AdminDashboard({
       onAddMenuItem(newItem);
       alert(`¡Producto "${newPizzaName}" creado en el servidor!`);
 
-      // reset form
       setNewCategoriaId(categories.length > 0 ? String(categories[0].idCategoriaProducto) : '');
       setNewPizzaCategory(categories.length > 0 ? categories[0].nombre : 'Clásicas');
       setNewPizzaName('');
       setNewPizzaPricePersonal('');
       setNewPizzaPriceMediano('');
       setNewPizzaPriceFamiliar('');
+      setNewSimplePrice('');
       setNewPizzaDesc('');
       setNewPizzaStock('10');
       setNewPizzaImageFile(null);
-      setNewPizzaIngredients(['Mozzarella', 'Albahaca']);
       setShowAddModal(false);
     } catch (err: any) {
       const status = err?.response?.status;
@@ -255,6 +289,50 @@ export default function AdminDashboard({
       {/* Main Admin canvas */}
       <main className="flex-grow p-8 overflow-y-auto space-y-8 font-sans">
         
+        <section className="bg-white p-4 rounded-3xl border border-slate-150 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-bold">Modo Admin</p>
+            <h2 className="text-lg font-extrabold text-slate-900">Acceso rápido a otras vistas</h2>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onNavigate('waiter')}
+              className="px-3 py-2 bg-slate-100 text-slate-700 rounded-2xl text-xs font-semibold hover:bg-slate-200 transition"
+            >
+              Ver como Mesero
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('cook')}
+              className="px-3 py-2 bg-slate-100 text-slate-700 rounded-2xl text-xs font-semibold hover:bg-slate-200 transition"
+            >
+              Ver como Cocinero
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('delivery-driver')}
+              className="px-3 py-2 bg-slate-100 text-slate-700 rounded-2xl text-xs font-semibold hover:bg-slate-200 transition"
+            >
+              Ver como Repartidor
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('home')}
+              className="px-3 py-2 bg-slate-100 text-slate-700 rounded-2xl text-xs font-semibold hover:bg-slate-200 transition"
+            >
+              Ver la Página
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('profile')}
+              className="px-3 py-2 bg-secondary text-white rounded-2xl text-xs font-semibold hover:bg-emerald-700 transition"
+            >
+              Mi perfil
+            </button>
+          </div>
+        </section>
+
         {/* Dynamic view rendering */}
 
         {/* View 1: Control Center panel */}
@@ -379,12 +457,26 @@ export default function AdminDashboard({
                 <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 font-display">Gestión de Menú</h1>
                 <p className="text-sm text-gray-500">Ajusta ingredientes, precios y disponibilidades en segundos.</p>
               </div>
-              <button 
-                onClick={() => setShowAddModal(true)}
-                className="bg-primary text-white hover:bg-emerald-700 font-extrabold text-xs py-3 px-5 rounded-xl cursor-pointer flex items-center gap-1.5 shadow-sm uppercase tracking-wide"
-              >
-                <Plus className="w-4.5 h-4.5" /> Nueva Pizza artesanal
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button 
+                  onClick={() => {
+                    setNewProductMode('pizza');
+                    setShowAddModal(true);
+                  }}
+                  className="bg-primary text-white hover:bg-emerald-700 font-extrabold text-xs py-3 px-5 rounded-xl cursor-pointer flex items-center gap-1.5 shadow-sm uppercase tracking-wide"
+                >
+                  <Plus className="w-4.5 h-4.5" /> Nueva Pizza artesanal
+                </button>
+                <button 
+                  onClick={() => {
+                    setNewProductMode('simple');
+                    setShowAddModal(true);
+                  }}
+                  className="bg-slate-900 text-white hover:bg-slate-800 font-extrabold text-xs py-3 px-5 rounded-xl cursor-pointer flex items-center gap-1.5 shadow-sm uppercase tracking-wide"
+                >
+                  <Plus className="w-4.5 h-4.5" /> Nuevo producto simple
+                </button>
+              </div>
             </div>
 
             {/* Search Input Filter bar */}
@@ -419,7 +511,7 @@ export default function AdminDashboard({
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-4">
                             <img 
-                              src={item.image} 
+                              src={item.image || undefined} 
                               alt={item.name} 
                               className="w-12 h-12 object-cover rounded-lg bg-slate-100 shrink-0"
                             />
@@ -614,6 +706,9 @@ export default function AdminDashboard({
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-150 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-150 bg-slate-50 text-slate-600 text-xs font-bold uppercase tracking-wide">
+                {usersLoading ? 'Cargando usuarios registrados...' : usersError ? usersError : `Mostrando ${usersList.length} usuarios`}
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
                   <thead className="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-150">
@@ -625,51 +720,61 @@ export default function AdminDashboard({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700">
-                    {usersList.map((usr, i) => (
-                      <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-4 font-bold text-slate-900">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-[10px] text-slate-600">
-                              {usr.fullName.substring(0,2).toUpperCase()}
+                    {usersList.length > 0 ? (
+                      usersList.map((usr, i) => (
+                        <tr key={usr.id ?? i} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-6 py-4 font-bold text-slate-900">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-[10px] text-slate-600">
+                                {usr.fullName.substring(0,2).toUpperCase()}
+                              </div>
+                              <span>{usr.fullName}</span>
                             </div>
-                            <span>{usr.fullName}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-slate-500 font-medium">{usr.email}</td>
-                        <td className="px-6 py-4">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${
-                            usr.role === 'admin' 
-                              ? 'bg-purple-100 text-purple-800' 
-                              : usr.role === 'cocinero' 
-                                ? 'bg-indigo-100 text-indigo-800' 
-                                : usr.role === 'repartidor' 
-                                  ? 'bg-amber-100 text-amber-800' 
-                                  : usr.role === 'mesero' 
-                                    ? 'bg-blue-105 bg-blue-50 text-blue-700' 
-                                    : 'bg-slate-150 bg-slate-100 text-slate-600'
-                          }`}>
-                            {usr.role.toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <button 
-                            onClick={() => {
-                              const options = ['cliente', 'mesero', 'cocinero', 'repartidor', 'admin'];
-                              const newRole = prompt(`Cambiar rol de ${usr.fullName} a (cliente, mesero, cocinero, repartidor, admin):`, usr.role);
-                              if (newRole && options.includes(newRole)) {
-                                setUsersList(prev => prev.map((u, idx) => idx === i ? { ...u, role: newRole as any } : u));
-                                alert('Rol actualizado correctamente.');
-                              } else if (newRole) {
-                                alert('Rol no válido.');
-                              }
-                            }}
-                            className="text-secondary font-bold hover:underline"
-                          >
-                            Modificar Acceso
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-6 py-4 text-slate-500 font-medium">{usr.email}</td>
+                          <td className="px-6 py-4">
+                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${
+                              usr.role === 'admin' 
+                                ? 'bg-purple-100 text-purple-800' 
+                                : usr.role === 'cocinero' 
+                                  ? 'bg-indigo-100 text-indigo-800' 
+                                  : usr.role === 'repartidor' 
+                                    ? 'bg-amber-100 text-amber-800' 
+                                    : usr.role === 'mesero' 
+                                      ? 'bg-blue-105 bg-blue-50 text-blue-700' 
+                                      : 'bg-slate-150 bg-slate-100 text-slate-600'
+                            }`}>
+                              {usr.role.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <button 
+                              onClick={() => {
+                                const options = ['cliente', 'mesero', 'cocinero', 'repartidor', 'admin'];
+                                const newRole = prompt(`Cambiar rol de ${usr.fullName} a (cliente, mesero, cocinero, repartidor, admin):`, usr.role);
+                                if (newRole && options.includes(newRole)) {
+                                  setUsersList(prev => prev.map((u, idx) => idx === i ? { ...u, role: newRole as any } : u));
+                                  alert('Rol actualizado correctamente.');
+                                } else if (newRole) {
+                                  alert('Rol no válido.');
+                                }
+                              }}
+                              className="text-secondary font-bold hover:underline"
+                            >
+                              Modificar Acceso
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      !usersLoading && (
+                        <tr>
+                          <td colSpan={4} className="px-6 py-10 text-center text-slate-500">
+                            No se encontraron usuarios registrados. Verifica el endpoint de backend en <code>/api/usuarios</code> y que el token admin esté activo.
+                          </td>
+                        </tr>
+                      )
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -690,7 +795,7 @@ export default function AdminDashboard({
               className="bg-white max-w-2xl w-full rounded-2xl overflow-hidden shadow-2xl flex flex-col relative border border-slate-100"
             >
               <div className="px-6 py-4 border-b border-slate-150 flex items-center justify-between bg-slate-50/50">
-                <h3 className="font-extrabold text-slate-900 border-none text-base font-display">Añadir Nueva Pizza Artesanal</h3>
+                <h3 className="font-extrabold text-slate-900 border-none text-base font-display">Añadir {newProductMode === 'pizza' ? 'Nueva Pizza Artesanal' : 'Nuevo Producto Simple'}</h3>
                 <button 
                   onClick={() => setShowAddModal(false)}
                   className="p-1.5 hover:bg-slate-150 rounded-full text-slate-400 cursor-pointer"
@@ -730,10 +835,10 @@ export default function AdminDashboard({
                     )}
                   </div>
                   <div className="col-span-2 sm:col-span-1">
-                    <label className="text-xs font-bold text-slate-600 block mb-1">Nombre de la Pizza</label>
+                    <label className="text-xs font-bold text-slate-600 block mb-1">Nombre del producto</label>
                     <input 
                       type="text"
-                      placeholder="Ej. Bosque de Trufa Rústica"
+                      placeholder="Ej. Sauce BBQ, Ensalada César"
                       value={newPizzaName}
                       onChange={e => setNewPizzaName(e.target.value)}
                       className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium"
@@ -742,59 +847,90 @@ export default function AdminDashboard({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2 sm:col-span-1">
-                    <label className="text-xs font-bold text-slate-600 block mb-1">Precio Personal (S/)</label>
-                    <input 
-                      type="number"
-                      placeholder="35.00"
-                      step="0.10"
-                      value={newPizzaPricePersonal}
-                      onChange={e => setNewPizzaPricePersonal(e.target.value)}
-                      className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium font-sans"
-                      required
-                    />
-                  </div>
-                  <div className="col-span-2 sm:col-span-1">
-                    <label className="text-xs font-bold text-slate-600 block mb-1">Precio Mediano (S/)</label>
-                    <input 
-                      type="number"
-                      placeholder="42.00"
-                      step="0.10"
-                      value={newPizzaPriceMediano}
-                      onChange={e => setNewPizzaPriceMediano(e.target.value)}
-                      className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium font-sans"
-                      required
-                    />
-                  </div>
-                </div>
+                {newProductMode === 'pizza' ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-2 sm:col-span-1">
+                        <label className="text-xs font-bold text-slate-600 block mb-1">Precio Personal (S/)</label>
+                        <input 
+                          type="number"
+                          placeholder="35.00"
+                          step="0.10"
+                          value={newPizzaPricePersonal}
+                          onChange={e => setNewPizzaPricePersonal(e.target.value)}
+                          className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium font-sans"
+                          required
+                        />
+                      </div>
+                      <div className="col-span-2 sm:col-span-1">
+                        <label className="text-xs font-bold text-slate-600 block mb-1">Precio Mediano (S/)</label>
+                        <input 
+                          type="number"
+                          placeholder="42.00"
+                          step="0.10"
+                          value={newPizzaPriceMediano}
+                          onChange={e => setNewPizzaPriceMediano(e.target.value)}
+                          className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium font-sans"
+                          required
+                        />
+                      </div>
+                    </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2 sm:col-span-1">
-                    <label className="text-xs font-bold text-slate-600 block mb-1">Precio Familiar (S/)</label>
-                    <input 
-                      type="number"
-                      placeholder="55.00"
-                      step="0.10"
-                      value={newPizzaPriceFamiliar}
-                      onChange={e => setNewPizzaPriceFamiliar(e.target.value)}
-                      className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium font-sans"
-                      required
-                    />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-2 sm:col-span-1">
+                        <label className="text-xs font-bold text-slate-600 block mb-1">Precio Familiar (S/)</label>
+                        <input 
+                          type="number"
+                          placeholder="55.00"
+                          step="0.10"
+                          value={newPizzaPriceFamiliar}
+                          onChange={e => setNewPizzaPriceFamiliar(e.target.value)}
+                          className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium font-sans"
+                          required
+                        />
+                      </div>
+                      <div className="col-span-2 sm:col-span-1">
+                        <label className="text-xs font-bold text-slate-600 block mb-1">Stock (unidades)</label>
+                        <input 
+                          type="number"
+                          placeholder="10"
+                          step="1"
+                          value={newPizzaStock}
+                          onChange={e => setNewPizzaStock(e.target.value)}
+                          className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium font-sans"
+                          required
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="col-span-2 sm:col-span-1">
-                    <label className="text-xs font-bold text-slate-600 block mb-1">Stock (unidades)</label>
-                    <input 
-                      type="number"
-                      placeholder="10"
-                      step="1"
-                      value={newPizzaStock}
-                      onChange={e => setNewPizzaStock(e.target.value)}
-                      className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium font-sans"
-                      required
-                    />
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-xs font-bold text-slate-600 block mb-1">Precio (S/)</label>
+                      <input 
+                        type="number"
+                        placeholder="15.00"
+                        step="0.10"
+                        value={newSimplePrice}
+                        onChange={e => setNewSimplePrice(e.target.value)}
+                        className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium font-sans"
+                        required
+                      />
+                    </div>
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-xs font-bold text-slate-600 block mb-1">Stock (unidades)</label>
+                      <input 
+                        type="number"
+                        placeholder="10"
+                        step="1"
+                        value={newPizzaStock}
+                        onChange={e => setNewPizzaStock(e.target.value)}
+                        className="w-full bg-slate-50 p-2.5 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none font-medium font-sans"
+                        required
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div>
                   <label className="text-xs font-bold text-slate-600 block mb-1">Imagen (archivo)</label>
@@ -816,32 +952,12 @@ export default function AdminDashboard({
                 <div>
                   <label className="text-xs font-bold text-slate-600 block mb-1">Descripción</label>
                   <textarea 
-                    placeholder="Salsa de tomate importada, mozzarela fresca di fior, gotas del mejor aceite perfumado..."
+                    placeholder="Salsa de tomate importada, mozzarella fresca, y toque secreto de Mike Oven."
                     value={newPizzaDesc}
                     onChange={e => setNewPizzaDesc(e.target.value)}
                     rows={2}
                     className="w-full bg-slate-50 p-3 text-xs rounded-xl border border-slate-200 focus:ring-secondary focus:border-secondary outline-none resize-none font-medium text-slate-700"
                   />
-                </div>
-
-                {/* Ingredients tagger */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-600 block mb-1">Ingredientes Principales (Enter para añadir)</label>
-                  <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl min-h-[44px] items-center">
-                    {newPizzaIngredients.map(tag => (
-                      <span key={tag} className="bg-primary-container text-on-primary-container text-[10px] font-bold py-1 px-2.5 rounded-full flex items-center gap-1 shrink-0 font-sans">
-                        {tag} <X className="w-3 h-3 text-slate-500 cursor-pointer hover:text-red-700" onClick={() => handleRemoveIngredient(tag)} />
-                      </span>
-                    ))}
-                    <input 
-                      type="text"
-                      placeholder={newPizzaIngredients.length === 0 ? "Añadir..." : ""}
-                      value={ingredientInput}
-                      onChange={e => setIngredientInput(e.target.value)}
-                      onKeyDown={handleAddIngredient}
-                      className="border-none bg-transparent focus:ring-0 text-xs p-0 w-24 outline-none placeholder:text-gray-450 text-slate-700"
-                    />
-                  </div>
                 </div>
               </form>
 
@@ -862,7 +978,7 @@ export default function AdminDashboard({
                     savingProduct ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'
                   }`}
                 >
-                  {savingProduct ? 'Guardando...' : 'Guardar Pizza'}
+                  {savingProduct ? 'Guardando...' : newProductMode === 'pizza' ? 'Guardar Pizza' : 'Guardar Producto'}
                 </button>
               </div>
             </motion.div>

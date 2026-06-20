@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { CheckCircle, Flame, MapPin, Phone, MessageSquare, Timer, ShoppingBag, HelpCircle, Truck } from 'lucide-react';
 import { CartItem, ServerOrder } from '../types';
+import { simulatePayment } from '../api/pagos';
 
 interface TrackOrderViewProps {
   order: ServerOrder | null;
@@ -42,6 +43,37 @@ export default function TrackOrderView({ order, onNavigate, onCancelOrder }: Tra
 
   const activeOrder = order || fallbackOrder;
   const [timeLeft, setTimeLeft] = useState(activeOrder.elapsedMinutes);
+
+  // Small inner component to handle payment simulation when backend returns the simular endpoint
+  function PaymentButton({ orderId }: { orderId: string }) {
+    const [loading, setLoading] = useState(false);
+
+    const handleClick = async () => {
+      setLoading(true);
+      try {
+        const res = await simulatePayment({ pedidoId: orderId });
+        if (res?.waLink) {
+          window.open(res.waLink, '_blank', 'noreferrer');
+        }
+        alert(`Pago: ${res?.estado ?? 'desconocido'}`);
+      } catch (e) {
+        console.error('[TrackOrderView] simulatePayment error', e);
+        alert('No se pudo completar la simulación de pago. Intenta de nuevo.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    return (
+      <button
+        onClick={handleClick}
+        disabled={loading}
+        className="block w-full text-center bg-secondary text-white py-3 rounded-xl font-bold hover:bg-primary transition-colors"
+      >
+        {loading ? 'Procesando...' : 'Simular Pago'}
+      </button>
+    );
+  }
 
   useEffect(() => {
     if (timeLeft <= 0) return;
@@ -273,6 +305,24 @@ export default function TrackOrderView({ order, onNavigate, onCancelOrder }: Tra
                 <span className="text-secondary font-display text-base">S/ {activeOrder.total.toFixed(2)}</span>
               </div>
             </div>
+
+            {activeOrder.paymentUrl && (
+              <div className="space-y-3 pt-3 border-t border-slate-50">
+                <p className="text-sm text-slate-700">Tu pedido fue creado correctamente. Completa el pago para confirmar la preparación.</p>
+                {activeOrder.paymentUrl.includes('simular') ? (
+                  <PaymentButton orderId={activeOrder.id} />
+                ) : (
+                  <a
+                    href={activeOrder.paymentUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block text-center bg-secondary text-white py-3 rounded-xl font-bold hover:bg-primary transition-colors"
+                  >
+                    Ir a Pago Seguro
+                  </a>
+                )}
+              </div>
+            )}
 
             <div className="bg-slate-50 p-3 rounded-lg flex items-start gap-2.5 mt-4">
               <MapPin className="text-secondary w-5 h-5 shrink-0 mt-0.5" />

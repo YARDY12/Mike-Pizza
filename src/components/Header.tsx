@@ -157,13 +157,7 @@ export default function Header({ activeView, onNavigate, cart, user }: HeaderPro
 
           {/* User Profile display */}
           <button 
-            onClick={() => {
-              if (user.role === 'cliente') {
-                onNavigate(user.isAuthenticated ? 'profile' : 'login');
-              } else {
-                onNavigate(user.role);
-              }
-            }}
+            onClick={() => onNavigate(user.isAuthenticated ? 'profile' : 'login')}
             className="flex items-center gap-2 p-2 rounded-full hover:bg-slate-50 transition-colors active:scale-95 cursor-pointer"
             aria-label="Perfil de usuario"
           >

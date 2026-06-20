@@ -14,6 +14,14 @@ interface CartViewProps {
   onClearCart: () => void;
   user: { fullName: string; email: string; isAuthenticated: boolean };
   onNavigate: (view: string) => void;
+  onPlaceOrder: (orderData: {
+    deliveryMethod: 'delivery' | 'pickup';
+    address?: string;
+    district?: string;
+    paymentMethod: 'card' | 'digital_wallet' | 'cash';
+    lat?: number;
+    lng?: number;
+  }) => Promise<void>;
 }
 
 export default function CartView({ 
@@ -22,7 +30,8 @@ export default function CartView({
   onRemoveItem, 
   onClearCart,
   user,
-  onNavigate 
+  onNavigate,
+  onPlaceOrder
 }: CartViewProps) {
   
   // Checkout Steps: 'cart' | 'checkout' | 'success'
@@ -79,8 +88,8 @@ export default function CartView({
     }
   };
 
-  // Submit Checkout order
-  const handlePlaceOrder = (e: React.FormEvent) => {
+  // Submit Checkout order to backend
+  const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName || !formEmail || !formPhone) {
       setFormError('Por favor completa todos los campos requeridos de contacto.');
@@ -91,11 +100,21 @@ export default function CartView({
       return;
     }
 
-    // Generate random order number
-    const randomId = `MK-${Math.floor(1000 + Math.random() * 9000)}`;
-    setConfirmedOrderId(randomId);
-    setFormError('');
-    setStep('success');
+    try {
+      await onPlaceOrder({
+        deliveryMethod: deliveryMethod === 'Domicilio' ? 'delivery' : 'pickup',
+        address: formAddress,
+        district: 'Miraflores', // TODO: obtener de UI
+        paymentMethod: paymentMethod === 'Tarjeta' ? 'card' : paymentMethod === 'Yape' ? 'digital_wallet' : 'cash',
+      });
+      // Success is handled by App.tsx callback; just update UI here
+      const randomId = `MK-${Math.floor(1000 + Math.random() * 9000)}`;
+      setConfirmedOrderId(randomId);
+      setFormError('');
+      setStep('success');
+    } catch (err: any) {
+      setFormError(err?.message || 'Error al procesar el pedido. Intenta de nuevo.');
+    }
   };
 
   const handleFinishSuccess = () => {
@@ -169,7 +188,7 @@ export default function CartView({
                         <img 
                           alt={item.name} 
                           className="w-16 h-16 object-cover rounded-lg bg-surface border border-gray-100 shrink-0" 
-                          src={item.image} 
+                          src={item.image || 'https://via.placeholder.com/96?text=Sin+imagen'} 
                         />
                         <div>
                           <h3 className="font-bold text-secondary text-base mb-1 font-display">{item.name}</h3>

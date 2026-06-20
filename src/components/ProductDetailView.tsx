@@ -105,7 +105,7 @@ export default function ProductDetailView({ selectedItem, onNavigate, onAddCusto
             <img 
               alt={pizza.name} 
               className="w-full h-full object-cover rounded-xl" 
-              src={pizza.image} 
+              src={pizza.image || 'https://via.placeholder.com/500?text=Sin+imagen'} 
             />
           </div>
         </div>

@@ -1,20 +1,62 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Inbox, RefreshCw, Check, Clock, Eye, AlertCircle, ChefHat } from 'lucide-react';
+import { Inbox, RefreshCw, Check, Clock, Eye, AlertCircle, ChefHat, X } from 'lucide-react';
 import { ServerOrder } from '../types';
+import { listarPedidosCocina, PedidoKitchenDto } from '../api/cocina';
 
 interface CookDashboardProps {
   orders: ServerOrder[];
   onUpdateOrderStatus: (orderId: string, status: 'requested' | 'processing' | 'ready' | 'delivered') => void;
+  onMarkPrepared: (orderId: string, action: 'LISTO_ENTREGA' | 'LISTO_RECOGER') => void;
+  onSimulateOrder?: () => void;
 }
 
-export default function CookDashboard({ orders, onUpdateOrderStatus }: CookDashboardProps) {
+export default function CookDashboard({ orders, onUpdateOrderStatus, onMarkPrepared, onSimulateOrder }: CookDashboardProps) {
   const [selectedOrder, setSelectedOrder] = useState<ServerOrder | null>(null);
+  const [polledOrders, setPolledOrders] = useState<ServerOrder[]>([]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const mapPedido = (p: PedidoKitchenDto): ServerOrder => ({
+      id: String(p.idPedido ?? p.codigo ?? `pedido-${Date.now()}`),
+      customerName: p.clienteNombre,
+      phone: p.telefono,
+      address: p.direccion,
+      district: p.distrito,
+      total: p.items.reduce((s, it) => s + it.precioUnitario * it.cantidad, 0),
+      status: p.estado?.toLowerCase() === 'pagado' || p.estado?.toLowerCase() === 'pendiente_pago' ? 'requested' : p.estado?.toLowerCase() === 'en proceso' ? 'processing' : 'ready',
+      elapsedMinutes: 0,
+      deliveryMethod: p.tipoEntrega === 'DELIVERY' ? 'delivery' : 'pickup',
+      items: p.items.map((it, idx) => ({ cartId: `pedido-${p.idPedido}-${idx}`, id: String(it.id), name: it.nombre, price: it.precioUnitario, quantity: it.cantidad, image: 'https://via.placeholder.com/96?text=Sin+imagen' })),
+    });
+
+    const fetchOnce = async () => {
+      try {
+        const list = await listarPedidosCocina('PAGADO');
+        if (cancelled) return;
+        setPolledOrders(list.map(mapPedido));
+      } catch (err) {
+        // ignore polling errors silently; UI will still render prop `orders`
+        console.error('[CookDashboard] polling error', err);
+      }
+    };
+
+    // initial fetch
+    void fetchOnce();
+    const id = setInterval(() => void fetchOnce(), 7000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  // Source orders: prefer polledOrders when available
+  const sourceOrders = polledOrders.length > 0 ? polledOrders : orders;
   // Categorize orders
-  const requestedOrders = orders.filter(o => o.status === 'requested');
-  const processingOrders = orders.filter(o => o.status === 'processing');
-  const readyOrders = orders.filter(o => o.status === 'ready' || o.status === 'delivered');
+  const requestedOrders = sourceOrders.filter(o => o.status === 'requested');
+  const processingOrders = sourceOrders.filter(o => o.status === 'processing');
+  const readyOrders = sourceOrders.filter(o => o.status === 'ready' || o.status === 'delivered');
 
   const urgentCount = requestedOrders.length;
 
@@ -37,9 +79,14 @@ export default function CookDashboard({ orders, onUpdateOrderStatus }: CookDashb
             <span>COMANDAS URGENTES: {urgentCount}</span>
           </div>
 
-          <div className="flex items-center gap-2 bg-emerald-50 text-emerald-800 px-4 py-3 rounded-xl border border-emerald-100 shadow-sm text-xs font-bold">
-            <Clock className="w-4 h-4" />
-            <span>TIEMPO PROMEDIO: 13m</span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 bg-emerald-50 text-emerald-800 px-4 py-3 rounded-xl border border-emerald-100 shadow-sm text-xs font-bold">
+              <Clock className="w-4 h-4" />
+              <span>TIEMPO PROMEDIO: 13m</span>
+            </div>
+            {onSimulateOrder && (
+              <button onClick={onSimulateOrder} className="bg-primary text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-primary-600">Insertar pedido simulado</button>
+            )}
           </div>
         </div>
       </div>
@@ -71,7 +118,12 @@ export default function CookDashboard({ orders, onUpdateOrderStatus }: CookDashb
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-[10px] font-bold text-slate-400">ID: #{order.id}</span>
-                      <h3 className="font-bold text-slate-900 font-display mt-0.5">{order.customerName}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <h3 className="font-bold text-slate-900 font-display">{order.customerName}</h3>
+                        {order.isSimulated && (
+                          <span className="text-[10px] uppercase font-bold text-amber-600 bg-amber-100 px-2 py-1 rounded-full">Pedido web simulado</span>
+                        )}
+                      </div>
                     </div>
                     <span className="text-tertiary text-xs font-bold flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" /> {order.elapsedMinutes || '2'}m
@@ -157,8 +209,9 @@ export default function CookDashboard({ orders, onUpdateOrderStatus }: CookDashb
 
                   <button 
                     onClick={() => {
-                      onUpdateOrderStatus(order.id, 'ready');
-                      alert(`Comanda #${order.id} marcada como completada y colocada en barra de entrega.`);
+                      const action = order.deliveryMethod === 'delivery' ? 'LISTO_ENTREGA' : 'LISTO_RECOGER';
+                      onMarkPrepared(order.id, action);
+                      alert(`Comanda #${order.id} marcada como ${action === 'LISTO_ENTREGA' ? 'listo para entrega' : 'listo para recoger'}.`);
                     }}
                     className="w-full py-3 bg-tertiary text-white hover:bg-red-700 font-extrabold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer uppercase tracking-wider"
                   >
@@ -242,7 +295,7 @@ export default function CookDashboard({ orders, onUpdateOrderStatus }: CookDashb
                   onClick={() => setSelectedOrder(null)}
                   className="p-1 hover:bg-slate-100 rounded-full text-slate-400 cursor-pointer"
                 >
-                  <XIcon className="w-5 h-5" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
@@ -276,25 +329,5 @@ export default function CookDashboard({ orders, onUpdateOrderStatus }: CookDashb
       </AnimatePresence>
 
     </div>
-  );
-}
-
-function XIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M18 6 6 18" />
-      <path d="m6 6 12 12" />
-    </svg>
   );
 }

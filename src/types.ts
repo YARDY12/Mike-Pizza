@@ -21,6 +21,7 @@ export interface MenuItem {
 export interface CartItem {
   cartId: string; // unique cart identifier (e.g. combined string or serial/uuid)
   id: string; // base menu item ID
+  backendItemId?: number; // backend carrito item ID when persisted
   name: string;
   price: number; // calculated item unit price with customization modifiers
   image: string;
@@ -69,6 +70,7 @@ export interface ServerOrder {
   status: 'requested' | 'processing' | 'ready' | 'delivered';
   elapsedMinutes: number;
   deliveryMethod: 'delivery' | 'pickup';
+  paymentUrl?: string;
   tableId?: number;
   notes?: string;
 }

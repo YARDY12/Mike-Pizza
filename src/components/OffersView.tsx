@@ -125,7 +125,7 @@ export default function OffersView({ onAddToCart }: OffersViewProps) {
                 <div className="h-48 overflow-hidden bg-gray-50 relative">
                   <img 
                     className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-500" 
-                    src={offer.image} 
+                    src={offer.image || 'https://via.placeholder.com/320x180?text=Sin+imagen'} 
                     alt={offer.name} 
                   />
                   {offer.badge && (

@@ -1,18 +1,20 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, GlassWater, Plus, Minus, Trash2, Send, X, 
   Map, ChefHat, Bell, Table, Beer, Pizza, ShieldAlert, CheckCircle 
 } from 'lucide-react';
-import { CartItem, ServerOrder, TableState } from '../types';
+import { CartItem, MenuItem, ServerOrder, TableState } from '../types';
 
 interface WaiterDashboardProps {
+  orders: ServerOrder[];
   tables: TableState[];
+  menuItems: MenuItem[];
   onUpdateTableState: (tableId: number, status: 'free' | 'occupied', items: CartItem[], notes?: string, dinersCount?: number) => void;
   onSubmitWaiterOrder: (order: ServerOrder) => void;
 }
 
-export default function WaiterDashboard({ tables, onUpdateTableState, onSubmitWaiterOrder }: WaiterDashboardProps) {
+export default function WaiterDashboard({ orders, tables, menuItems, onUpdateTableState, onSubmitWaiterOrder }: WaiterDashboardProps) {
   const [activeTableId, setActiveTableId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'map' | 'fullForm'>('map');
   const [selectedCategory, setSelectedCategory] = useState<string>('Pizzas');
@@ -31,6 +33,36 @@ export default function WaiterDashboard({ tables, onUpdateTableState, onSubmitWa
   const [initNotes, setInitNotes] = useState<string>('');
 
   const selectedTable = tables.find(t => t.id === activeTableId);
+  const pendingOrders = orders.filter(o => o.status === 'requested' || o.status === 'processing');
+
+  const categoryGroups: Record<string, string[]> = {
+    Pizzas: ['Clásicas', 'Especialidades', 'Vegetarianas'],
+    Entradas: ['Complementos'],
+    Bebidas: ['Bebidas', 'Postres'],
+  };
+
+  const availableCategories = useMemo(() => {
+    const distinct = new Set<string>(['Pizzas', 'Entradas', 'Bebidas']);
+    menuItems.forEach(item => {
+      if (!categoryGroups.Pizzas.includes(item.category) && !categoryGroups.Entradas.includes(item.category) && !categoryGroups.Bebidas.includes(item.category)) {
+        distinct.add(item.category);
+      }
+    });
+    return Array.from(distinct);
+  }, [menuItems]);
+
+  const filteredMenuItems = useMemo(() => {
+    if (selectedCategory === 'Pizzas') {
+      return menuItems.filter(item => categoryGroups.Pizzas.includes(item.category));
+    }
+    if (selectedCategory === 'Entradas') {
+      return menuItems.filter(item => categoryGroups.Entradas.includes(item.category));
+    }
+    if (selectedCategory === 'Bebidas') {
+      return menuItems.filter(item => categoryGroups.Bebidas.includes(item.category));
+    }
+    return menuItems.filter(item => item.category === selectedCategory);
+  }, [menuItems, selectedCategory]);
 
   const handleSelectTable = (tableId: number) => {
     setActiveTableId(tableId);
@@ -141,6 +173,41 @@ export default function WaiterDashboard({ tables, onUpdateTableState, onSubmitWa
         
         {/* Left main area */}
         <section className="lg:col-span-8 flex flex-col gap-6">
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400 font-bold">Pedidos activos</p>
+                <h2 className="text-xl font-extrabold text-slate-900">Pedidos esperando cocina</h2>
+              </div>
+              <span className="text-xs text-slate-500 font-semibold">{pendingOrders.length} en cola</span>
+            </div>
+            {pendingOrders.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-slate-500">
+                No hay pedidos abiertos en cocina. El mesero puede crear uno nuevo desde el panel.
+              </div>
+            ) : (
+              <ul className="space-y-3">
+                {pendingOrders.slice(0, 4).map(order => (
+                  <li key={order.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    <div className="flex justify-between items-start gap-3">
+                      <div>
+                        <p className="font-bold text-slate-900">Pedido #{order.id}</p>
+                        <p className="text-xs text-slate-500">{order.customerName} • {order.deliveryMethod === 'delivery' ? 'Delivery' : 'Recojo'}</p>
+                      </div>
+                      <span className="text-xs font-semibold text-secondary">{order.status.toUpperCase()}</span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                      {order.items.slice(0, 3).map(item => (
+                        <span key={item.cartId} className="rounded-full bg-white border border-slate-200 px-3 py-1">{item.quantity}x {item.name}</span>
+                      ))}
+                      {order.items.length > 3 && <span className="rounded-full bg-white border border-slate-200 px-3 py-1">+{order.items.length - 3} más</span>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           {activeTab === 'map' ? (
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
               <header className="mb-6 flex justify-between items-center pb-4 border-b border-gray-100">
@@ -219,113 +286,33 @@ export default function WaiterDashboard({ tables, onUpdateTableState, onSubmitWa
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {/* Simulated product items */}
-                {selectedCategory === 'Pizzas' && (
-                  <>
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 hover:shadow-sm transition-all flex flex-col justify-between">
-                      <div className="flex gap-3">
-                        <img 
-                          src="https://lh3.googleusercontent.com/aida-public/AB6AXuAmEMjd4R_MSXWOXC1bLYZEBmyncYlkkil4C8pajjtx6ZQG-kvngWbnhg_roVO7gs92GIAxH5T-_wK3t8zwuLmY3EQnHUzRjcXI6_voVFn8PX7oGm9FPnHd-gORe2sCbFFmIltWgqq-YR_rx9sj4HWQaA40yDlW1iy8sFipmFZiOmHJr-asELAdeLi1GdbNEAxv5YacJKU3mZ8Uk2gzIoMDLZx6C9MaX614B53KLPFlbWuSJtbkeqp079j6U2Bs8o9HItZjBMXTuEo" 
-                          alt="Margherita" 
-                          className="w-12 h-12 rounded-lg object-cover"
-                        />
-                        <div className="text-xs">
-                          <p className="font-bold text-slate-900">Margherita Especial</p>
-                          <p className="text-emerald-700 font-bold mt-1">S/ 42.00</p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => handleQuickAdd('Margherita Especial', 42.00, 'margherita-rustica', 'https://lh3.googleusercontent.com/aida-public/AB6AXuAmEMjd4R_MSXWOXC1bLYZEBmyncYlkkil4C8pajjtx6ZQG-kvngWbnhg_roVO7gs92GIAxH5T-_wK3t8zwuLmY3EQnHUzRjcXI6_voVFn8PX7oGm9FPnHd-gORe2sCbFFmIltWgqq-YR_rx9sj4HWQaA40yDlW1iy8sFipmFZiOmHJr-asELAdeLi1GdbNEAxv5YacJKU3mZ8Uk2gzIoMDLZx6C9MaX614B53KLPFlbWuSJtbkeqp079j6U2Bs8o9HItZjBMXTuEo')}
-                        className="w-full bg-secondary text-white font-bold py-1.5 rounded-lg text-xs mt-3 flex items-center justify-center gap-1 hover:bg-opacity-95 active:scale-95"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> Agregar
-                      </button>
-                    </div>
-
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 hover:shadow-sm transition-all flex flex-col justify-between">
-                      <div className="flex gap-3">
-                        <img 
-                          src="https://lh3.googleusercontent.com/aida-public/AB6AXuAnhxSbp6Y5NrNuUwzuV_S04uXsA1J-AUtOIaFjek6r4ZMPeF2xaxeM0E5tiCECVscBxlNLCWaOdO1MDHoPjoQrqaGD_fQxk6ZVI2Zw3Aaaqt2xhirYeXITRhZ96hnSwHsAc-b2wSIuirCzEcElnHVk1gJEu_tTGUnJjUuaxzJ2ol3_nWIp4pwAFKQJoWsWYsMOJ-1UGA2yiGRrtlYu0TGCW8f_mcS2TsJQ3lrZ9Bhb39l3N8xo9SjEnxCuZ_A8k1Dg8H8_FynRvpk" 
-                          alt="Pepperoni" 
-                          className="w-12 h-12 rounded-lg object-cover"
-                        />
-                        <div className="text-xs">
-                          <p className="font-bold text-slate-900">Pepperoni Miel</p>
-                          <p className="text-emerald-700 font-bold mt-1">S/ 48.00</p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => handleQuickAdd('Pepperoni Miel', 48.00, 'pepperoni-honey', 'https://lh3.googleusercontent.com/aida-public/AB6AXuAnhxSbp6Y5NrNuUwzuV_S04uXsA1J-AUtOIaFjek6r4ZMPeF2xaxeM0E5tiCECVscBxlNLCWaOdO1MDHoPjoQrqaGD_fQxk6ZVI2Zw3Aaaqt2xhirYeXITRhZ96hnSwHsAc-b2wSIuirCzEcElnHVk1gJEu_tTGUnJjUuaxzJ2ol3_nWIp4pwAFKQJoWsWYsMOJ-1UGA2yiGRrtlYu0TGCW8f_mcS2TsJQ3lrZ9Bhb39l3N8xo9SjEnxCuZ_A8k1Dg8H8_FynRvpk')}
-                        className="w-full bg-secondary text-white font-bold py-1.5 rounded-lg text-xs mt-3 flex items-center justify-center gap-1 hover:bg-opacity-95 active:scale-95"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> Agregar
-                      </button>
-                    </div>
-
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 hover:shadow-sm transition-all flex flex-col justify-between">
-                      <div className="flex gap-3">
-                        <img 
-                          src="https://lh3.googleusercontent.com/aida-public/AB6AXuCcNfmUjQr8LUK0tdgqQ6S0lw4EAldldNLMPtOaywJW05eNWl2eDH_BCVbYAaNywZH3Jk-NP5nXi-uD8NIq5MdvGm9CGPqOupe1JgSc0ILmMzOG0dJqpezNUVa1O5zVwvdWkLlihjkxHSQfEwshxyJ0j7j_0lVgWC4ufixV7pqkCpcITgsTD4g-4TlX7fDYJGO1A9sa55mvmZ9qW2BEP_Jbkux2bx-aznO22zsrvjA-wBaonbPI1ttd-Uc7ncKYSBNQzuW07AweNtg" 
-                          alt="Bosque" 
-                          className="w-12 h-12 rounded-lg object-cover"
-                        />
-                        <div className="text-xs">
-                          <p className="font-bold text-slate-900">Bosque Silvestre</p>
-                          <p className="text-emerald-700 font-bold mt-1">S/ 52.00</p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => handleQuickAdd('Bosque Silvestre', 52.00, 'bosque-trunfo', 'https://lh3.googleusercontent.com/aida-public/AB6AXuCcNfmUjQr8LUK0tdgqQ6S0lw4EAldldNLMPtOaywJW05eNWl2eDH_BCVbYAaNywZH3Jk-NP5nXi-uD8NIq5MdvGm9CGPqOupe1JgSc0ILmMzOG0dJqpezNUVa1O5zVwvdWkLlihjkxHSQfEwshxyJ0j7j_0lVgWC4ufixV7pqkCpcITgsTD4g-4TlX7fDYJGO1A9sa55mvmZ9qW2BEP_Jbkux2bx-aznO22zsrvjA-wBaonbPI1ttd-Uc7ncKYSBNQzuW07AweNtg')}
-                        className="w-full bg-secondary text-white font-bold py-1.5 rounded-lg text-xs mt-3 flex items-center justify-center gap-1 hover:bg-opacity-95 active:scale-95"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> Agregar
-                      </button>
-                    </div>
-                  </>
-                )}
-
-                {selectedCategory === 'Entradas' && (
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 hover:shadow-sm transition-all flex flex-col justify-between">
-                    <div className="flex gap-3">
-                      <img 
-                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuDbntqkmswdfoS6O87aV5MkYJnLi2SAZDDow4pZq9AyxuLXuwxJRw4UJ09rbRs1PH8f88sK6Z-TddStRW3jyubpNmI1UNTPo6SLKOojyQuYV7wjnHZ7gtPDmPLhPaLiVGWOnl4p7XuqSbTHCCN0c51aOkPmgdpWF3As7Qlr4Ka8iGvNolbnBH3pVo32TAbaYek3fbh1fhO99PhwUdwWAjPDeBQjCIxXIjEe2UgWYtrp2t-KdKUrvHyB3wq8Mhkauh8tED3J9GBNxak" 
-                        alt="Nudos" 
-                        className="w-12 h-12 rounded-lg object-cover"
-                      />
-                      <div className="text-xs">
-                        <p className="font-bold text-slate-900">Nudos de Ajo (6 uds)</p>
-                        <p className="text-emerald-700 font-bold mt-1">S/ 12.00</p>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => handleQuickAdd('Nudos de Ajo (6 und)', 12.00, 'garlic-knots', 'https://lh3.googleusercontent.com/aida-public/AB6AXuDbntqkmswdfoS6O87aV5MkYJnLi2SAZDDow4pZq9AyxuLXuwxJRw4UJ09rbRs1PH8f88sK6Z-TddStRW3jyubpNmI1UNTPo6SLKOojyQuYV7wjnHZ7gtPDmPLhPaLiVGWOnl4p7XuqSbTHCCN0c51aOkPmgdpWF3As7Qlr4Ka8iGvNolbnBH3pVo32TAbaYek3fbh1fhO99PhwUdwWAjPDeBQjCIxXIjEe2UgWYtrp2t-KdKUrvHyB3wq8Mhkauh8tED3J9GBNxak')}
-                      className="w-full bg-secondary text-white font-bold py-1.5 rounded-lg text-xs mt-3 flex items-center justify-center gap-1 hover:bg-opacity-95 active:scale-95"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Agregar
-                    </button>
+                {filteredMenuItems.length === 0 ? (
+                  <div className="col-span-full rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-slate-500">
+                    No hay productos disponibles para esta categoría.
                   </div>
-                )}
-
-                {selectedCategory === 'Bebidas' && (
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 hover:shadow-sm transition-all flex flex-col justify-between">
-                    <div className="flex gap-3">
-                      <img 
-                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuCwTJzwZigputMGW3tJzjmXxzMoAASK4zBgooPe95sslg10-OVp_Mhv3GWBpYTUL3w3SdNgMFuZd4sNtYJ9_uD2ZbUFojzkpCNC4G2kFj1nMbH9HGjiAopinxIc_al5g4QTeGfE2TuAhF5bj0fhaL1jOjLCEYByuTVL3BWWzEhhHgcwPPuPjnUnMLPOV9DPuUEftOqifyf7twi7nCgDhbLhWKUMNk7ssapTOYDw8m43z1XD1RT7L_8L12lNtxn2N6rZqVfMf5ipVQU" 
-                        alt="Limonada" 
-                        className="w-12 h-12 rounded-lg object-cover"
-                      />
-                      <div className="text-xs">
-                        <p className="font-bold text-slate-900">Limonada de Hierbas</p>
-                        <p className="text-emerald-700 font-bold mt-1">S/ 12.00</p>
+                ) : (
+                  filteredMenuItems.map((item) => (
+                    <div key={item.id} className="bg-slate-50 p-4 rounded-xl border border-slate-150 hover:shadow-sm transition-all flex flex-col justify-between">
+                      <div className="flex gap-3">
+                        <img 
+                          src={item.image || 'https://via.placeholder.com/96'} 
+                          alt={item.name}
+                          className="w-12 h-12 rounded-lg object-cover"
+                        />
+                        <div className="text-xs">
+                          <p className="font-bold text-slate-900">{item.name}</p>
+                          <p className="text-emerald-700 font-bold mt-1">S/ {item.price.toFixed(2)}</p>
+                        </div>
                       </div>
+                      <button 
+                        type="button"
+                        onClick={() => handleQuickAdd(item.name, item.price, item.id, item.image)}
+                        className="w-full bg-secondary text-white font-bold py-1.5 rounded-lg text-xs mt-3 flex items-center justify-center gap-1 hover:bg-opacity-95 active:scale-95"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Agregar
+                      </button>
                     </div>
-                    <button 
-                      onClick={() => handleQuickAdd('Limonada de Hierbas 500ml', 12.00, 'artisan-lemonade', 'https://lh3.googleusercontent.com/aida-public/AB6AXuCwTJzwZigputMGW3tJzjmXxzMoAASK4zBgooPe95sslg10-OVp_Mhv3GWBpYTUL3w3SdNgMFuZd4sNtYJ9_uD2ZbUFojzkpCNC4G2kFj1nMbH9HGjiAopinxIc_al5g4QTeGfE2TuAhF5bj0fhaL1jOjLCEYByuTVL3BWWzEhhHgcwPPuPjnUnMLPOV9DPuUEftOqifyf7twi7nCgDhbLhWKUMNk7ssapTOYDw8m43z1XD1RT7L_8L12lNtxn2N6rZqVfMf5ipVQU')}
-                      className="w-full bg-secondary text-white font-bold py-1.5 rounded-lg text-xs mt-3 flex items-center justify-center gap-1 hover:bg-opacity-95 active:scale-95"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Agregar
-                    </button>
-                  </div>
+                  ))
                 )}
               </div>
             </div>
@@ -385,42 +372,26 @@ export default function WaiterDashboard({ tables, onUpdateTableState, onSubmitWa
             <div className="space-y-2">
               <h4 className="text-xs font-bold text-slate-700">Comanda rápida</h4>
               <div className="grid grid-cols-3 gap-2">
-                <button 
-                  onClick={() => handleQuickAdd('Margherita Rústica', 45.00, 'margherita-rustica', 'https://lh3.googleusercontent.com/aida-public/AB6AXuAmEMjd4R_MSXWOXC1bLYZEBmyncYlkkil4C8pajjtx6ZQG-kvngWbnhg_roVO7gs92GIAxH5T-_wK3t8zwuLmY3EQnHUzRjcXI6_voVFn8PX7oGm9FPnHd-gORe2sCbFFmIltWgqq-YR_rx9sj4HWQaA40yDlW1iy8sFipmFZiOmHJr-asELAdeLi1GdbNEAxv5YacJKU3mZ8Uk2gzIoMDLZx6C9MaX614B53KLPFlbWuSJtbkeqp079j6U2Bs8o9HItZjBMXTuEo')}
-                  className={`p-2 border border-dashed rounded-xl flex flex-col items-center justify-center text-center transition-colors ${
-                    !activeTableId 
-                      ? 'border-slate-100 opacity-40 cursor-not-allowed text-slate-400' 
-                      : 'border-gray-200 hover:border-secondary hover:bg-emerald-50/20 cursor-pointer text-slate-800'
-                  }`}
-                  disabled={!activeTableId}
-                >
-                  <Pizza className={`w-5 h-5 mb-1 ${!activeTableId ? 'text-slate-300' : 'text-secondary'}`} />
-                  <span className="text-[10px] font-bold">Marg. (45)</span>
-                </button>
-                <button 
-                  onClick={() => handleQuickAdd('Pepperoni', 25.00, 'pepperoni', 'https://lh3.googleusercontent.com/aida-public/AB6AXuApqcjK_Rp7uzHFuqAzbm_xHmu4_TSD8AL56FkK8uDrH7zRzzZlfYveF_WxOqIazSy6a17R0ZUnUZDMtHGJxTQo63iJ5Wv-dd-BWfZASPRCySoR94B70_M6aVtzztodgZNx3D8dAztYYmbYDOjFi8_nBLPsrr_SMq-WCerUYYRHbUF7rH0Ryx483A6HycZVTOfZlli9vvBMjw0lDZAlL7OcbtktdUIBKpr0vUqctJTChw6lV8OhLdZ-goiU_x2IYN4XTfnzDlzHiRw')}
-                  className={`p-2 border border-dashed rounded-xl flex flex-col items-center justify-center text-center transition-colors ${
-                    !activeTableId 
-                      ? 'border-slate-100 opacity-40 cursor-not-allowed text-slate-400' 
-                      : 'border-gray-200 hover:border-secondary hover:bg-emerald-50/20 cursor-pointer text-slate-800'
-                  }`}
-                  disabled={!activeTableId}
-                >
-                  <Pizza className={`w-5 h-5 mb-1 ${!activeTableId ? 'text-slate-300' : 'text-secondary'}`} />
-                  <span className="text-[10px] font-bold">Pepp. (25)</span>
-                </button>
-                <button 
-                  onClick={() => handleQuickAdd('Nudos de Ajo (6 und)', 12.00, 'garlic-knots', 'https://lh3.googleusercontent.com/aida-public/AB6AXuDbntqkmswdfoS6O87aV5MkYJnLi2SAZDDow4pZq9AyxuLXuwxJRw4UJ09rbRs1PH8f88sK6Z-TddStRW3jyubpNmI1UNTPo6SLKOojyQuYV7wjnHZ7gtPDmPLhPaLiVGWOnl4p7XuqSbTHCCN0c51aOkPmgdpWF3As7Qlr4Ka8iGvNolbnBH3pVo32TAbaYek3fbh1fhO99PhwUdwWAjPDeBQjCIxXIjEe2UgWYtrp2t-KdKUrvHyB3wq8Mhkauh8tED3J9GBNxak')}
-                  className={`p-2 border border-dashed rounded-xl flex flex-col items-center justify-center text-center transition-colors ${
-                    !activeTableId 
-                      ? 'border-slate-100 opacity-40 cursor-not-allowed text-slate-400' 
-                      : 'border-gray-200 hover:border-secondary hover:bg-emerald-50/20 cursor-pointer text-slate-800'
-                  }`}
-                  disabled={!activeTableId}
-                >
-                  <Beer className={`w-5 h-5 mb-1 ${!activeTableId ? 'text-slate-300' : 'text-secondary'}`} />
-                  <span className="text-[10px] font-bold">Nudos (12)</span>
-                </button>
+                {menuItems && menuItems.length > 0 ? (
+                  menuItems.slice(0, 6).map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleQuickAdd(item.name, item.price, item.id, item.image)}
+                      className={`p-2 border border-dashed rounded-xl flex flex-col items-center justify-center text-center transition-colors ${
+                        !activeTableId 
+                          ? 'border-slate-100 opacity-40 cursor-not-allowed text-slate-400' 
+                          : 'border-gray-200 hover:border-secondary hover:bg-emerald-50/20 cursor-pointer text-slate-800'
+                      }`}
+                      disabled={!activeTableId}
+                      type="button"
+                    >
+                      <img src={item.image || 'https://via.placeholder.com/40'} alt={item.name} className={`w-5 h-5 mb-1 rounded ${!activeTableId ? 'opacity-40' : ''}`} />
+                      <span className="text-[10px] font-bold">{item.name.split(' ')[0]} ({Math.round(item.price)})</span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="col-span-full text-xs text-slate-500">No hay productos rápidos configurados.</div>
+                )}
               </div>
             </div>
 

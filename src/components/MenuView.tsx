@@ -184,7 +184,7 @@ export default function MenuView({ onSelectItem, onAddToCart, menuItems: menuIte
                     className="relative aspect-video overflow-hidden bg-surface-container cursor-pointer"
                   >
                     <img
-                      src={pizza.image}
+                      src={pizza.image || 'https://via.placeholder.com/320x180?text=Sin+imagen'}
                       alt={pizza.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                     />

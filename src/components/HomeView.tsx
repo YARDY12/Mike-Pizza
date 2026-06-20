@@ -118,7 +118,7 @@ export default function HomeView({ onNavigate, onAddToCart }: HomeViewProps) {
                 <div className="h-48 overflow-hidden relative bg-gray-50">
                   <img 
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
-                    src={combo.image} 
+                    src={combo.image || 'https://via.placeholder.com/320x180?text=Sin+imagen'} 
                     alt={combo.name} 
                   />
                   {combo.badge && (

@@ -21,17 +21,37 @@ import DeliveryDashboard from './components/DeliveryDashboard';
 import AdminDashboard from './components/AdminDashboard';
 import ProfileView from './components/ProfileView';
 
-import { CartItem, MenuItem, UserProfile, ServerOrder, TableState } from './types';
+import { CartItem, MenuItem, UserProfile, ServerOrder, TableState, PizzaCustomization } from './types';
 import { INITIAL_MENU_ITEMS } from './data';
 import { fetchMenuItems } from './api/menu';
 import { tokenStorage } from './api/tokenStorage';
+import {
+  obtenerCarrito,
+  agregarAlCarrito,
+  actualizarCantidadItem,
+  eliminarDelCarrito,
+  vaciarCarrito,
+  Carrito as BackendCarrito,
+  CarritoItem as BackendCarritoItem,
+} from './api/carrito';
+import { checkoutPedido, CheckoutRequest } from './api/pedidos';
+import { listarPedidosCocina, marcarPedidoPreparado, PedidoKitchenDto } from './api/cocina';
 
 const USER_STORAGE_KEY = 'mop_user';
 
 const loadStoredUser = (): UserProfile | null => {
   try {
     const raw = localStorage.getItem(USER_STORAGE_KEY);
+    // If there's no persisted user, nothing to restore
     if (!raw) return null;
+
+    // Ensure we have a token before restoring an authenticated session
+    const token = tokenStorage.get();
+    if (!token) {
+      console.log('[App] no token found, skipping stored user restore');
+      return null;
+    }
+
     const parsed = JSON.parse(raw) as UserProfile;
     if (!parsed || typeof parsed !== 'object') return null;
     console.log('[App] restored stored user', parsed);
@@ -57,8 +77,89 @@ const getStoredUserPhone = (email: string, fallbackPhone?: string): string | und
   return undefined;
 };
 
+const resolveImage = (image?: string) => {
+  if (image && image.trim()) return image;
+  return 'https://via.placeholder.com/96?text=Sin+imagen';
+};
+
 const clearStoredUser = () => {
   localStorage.removeItem(USER_STORAGE_KEY);
+};
+
+const SIMULATED_COOK_ORDER_ID = 'sim-cook-gabriel-marreros';
+const SIMULATED_COOK_ORDER: ServerOrder = {
+  id: SIMULATED_COOK_ORDER_ID,
+  customerName: 'Gabriel Marreros',
+  phone: '+51 912 000 123',
+  address: 'Avenida La Mar 1234',
+  district: 'San Isidro',
+  total: 35.80,
+  status: 'requested',
+  elapsedMinutes: 2,
+  deliveryMethod: 'delivery',
+  isSimulated: true,
+  items: [
+    {
+      cartId: 'sim-gabriel-1',
+      id: 'pizza-hawaiana',
+      name: 'Pizza Hawaiana',
+      price: 15.90,
+      quantity: 1,
+      image: 'https://via.placeholder.com/96?text=Hawaiana',
+    },
+    {
+      cartId: 'sim-gabriel-2',
+      id: 'pizza-americana',
+      name: 'Pizza Americana',
+      price: 14.90,
+      quantity: 1,
+      image: 'https://via.placeholder.com/96?text=Americana',
+    },
+    {
+      cartId: 'sim-gabriel-3',
+      id: 'inka-cola',
+      name: 'Inka Cola 500ml',
+      price: 5.00,
+      quantity: 1,
+      image: 'https://via.placeholder.com/96?text=Inka+Cola',
+    },
+  ],
+};
+
+const mapPedidoToServerOrder = (pedido: PedidoKitchenDto): ServerOrder => ({
+  id: String(pedido.idPedido ?? pedido.codigo ?? `pedido-${Date.now()}`),
+  customerName: pedido.clienteNombre,
+  phone: pedido.telefono,
+  address: pedido.direccion,
+  district: pedido.distrito,
+  total: pedido.items.reduce((sum, item) => sum + item.precioUnitario * item.cantidad, 0),
+  status: pedido.estado?.toLowerCase() === 'solicitado' || pedido.estado?.toLowerCase() === 'pagado' ? 'requested'
+    : pedido.estado?.toLowerCase() === 'en proceso' || pedido.estado?.toLowerCase() === 'processing' ? 'processing'
+    : pedido.estado?.toLowerCase() === 'listo' || pedido.estado?.toLowerCase() === 'ready' || pedido.estado?.toLowerCase() === 'listo_para_reparto' || pedido.estado?.toLowerCase() === 'listo_para_recojo' ? 'ready'
+    : pedido.estado?.toLowerCase() === 'entregado' || pedido.estado?.toLowerCase() === 'delivered' ? 'delivered'
+    : 'requested',
+  elapsedMinutes: 0,
+  deliveryMethod: pedido.tipoEntrega === 'DELIVERY' ? 'delivery' : 'pickup',
+  items: pedido.items.map((item, index) => ({
+    cartId: `pedido-${pedido.idPedido}-${index}`,
+    id: String(item.id),
+    name: item.nombre,
+    price: item.precioUnitario,
+    quantity: item.cantidad,
+    image: resolveImage(undefined),
+  })),
+  paymentUrl: pedido.pagoUrl,
+});
+
+const mergeKitchenOrders = (existing: ServerOrder[], incoming: ServerOrder[]): ServerOrder[] => {
+  const merged = new Map<string, ServerOrder>();
+  incoming.forEach(order => merged.set(order.id, order));
+  existing.forEach(order => {
+    if (!merged.has(order.id)) {
+      merged.set(order.id, order);
+    }
+  });
+  return Array.from(merged.values());
 };
 
 const DEFAULT_USER_PROFILE: UserProfile = {
@@ -111,36 +212,90 @@ export default function App() {
     };
   }, []);
 
-  // Pre-load Cart beautifully with sample entries matching high-res specs
-  const [cart, setCart] = useState<CartItem[]>([
-    {
-      cartId: 'default-margherita-1',
-      id: 'margherita-rustica',
-      name: 'Margherita Rústica',
-      price: 53.00,
-      image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAmEMjd4R_MSXWOXC1bLYZEBmyncYlkkil4C8pajjtx6ZQG-kvngWbnhg_roVO7gs92GIAxH5T-_wK3t8zwuLmY3EQnHUzRjcXI6_voVFn8PX7oGm9FPnHd-gORe2sCbFFmIltWgqq-YR_rx9sj4HWQaA40yDlW1iy8sFipmFZiOmHJr-asELAdeLi1GdbNEAxv5YacJKU3mZ8Uk2gzIoMDLZx6C9MaX614B53KLPFlbWuSJtbkeqp079j6U2Bs8o9HItZjBMXTuEo',
-      quantity: 1,
-      customization: {
-        size: 'Mediana',
+  // Cart state - starts empty, loads from backend when customer authenticates
+  const [cart, setCart] = useState<CartItem[]>([]);
+
+  const mapBackendItemToCartItem = (item: BackendCarritoItem): CartItem => {
+    const matchedMenuItem = menuItems.find(mi => mi.id === String(item.productoId));
+    return {
+      cartId: `backend-${item.id}`,
+      backendItemId: item.id,
+      id: String(item.productoId),
+      name: item.nombre,
+      price: item.precioUnitario,
+      image: resolveImage(matchedMenuItem?.image),
+      quantity: item.cantidad,
+      customization: item.tamano ? {
+        size: item.tamano as PizzaCustomization['size'],
         crust: 'Masa Madre Clásica',
-        toppings: ['Extra Mozzarella de Búfala']
-      }
-    },
-    {
-      cartId: 'default-lemonade-2',
-      id: 'artisan-lemonade',
-      name: 'Limonada de Hierbas 500ml',
-      price: 12.00,
-      image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCwTJzwZigputMGW3tJzjmXxzMoAASK4zBgooPe95sslg10-OVp_Mhv3GWBpYTUL3w3SdNgMFuZd4sNtYJ9_uD2ZbUFojzkpCNC4G2kFj1nMbH9HGjiAopinxIc_al5g4QTeGfE2TuAhF5bj0fhaL1jOjLCEYByuTVL3BWWzEhhHgcwPPuPjnUnMLPOV9DPuUEftOqifyf7twi7nCgDhbLhWKUMNk7ssapTOYDw8m43z1XD1RT7L_8L12lNtxn2N6rZqVfMf5ipVQU',
-      quantity: 1,
+        toppings: item.extras ? item.extras.split(',') : []
+      } : undefined,
+    };
+  };
+
+  const mapBackendCarritoToCartItems = (carrito: BackendCarrito): CartItem[] => {
+    return carrito.items?.map(mapBackendItemToCartItem) ?? [];
+  };
+
+  const buildBackendItemPayload = (item: CartItem): BackendCarritoItem => {
+    const numericId = Number(item.id);
+    const payload: Partial<BackendCarritoItem> = {
+      productoId: Number.isFinite(numericId) ? numericId : item.id,
+      nombre: item.name,
+      cantidad: item.quantity,
+      precioUnitario: item.price,
+    };
+
+    if (item.customization?.size) payload.tamano = item.customization.size;
+    if (item.customization?.toppings?.length) payload.extras = item.customization.toppings.join(',');
+
+    return payload as BackendCarritoItem;
+  };
+
+  const loadBackendCart = async (): Promise<boolean> => {
+    try {
+      const carrito = await obtenerCarrito();
+      setCart(mapBackendCarritoToCartItems(carrito));
+      return true;
+    } catch (err) {
+      console.error('[App] error loading cart from backend', err);
+      return false;
     }
-  ]);
+  };
+
+  const syncLocalCartToBackend = async (items: CartItem[]) => {
+    if (!items.length) return;
+
+    try {
+      for (const item of items) {
+        await agregarAlCarrito(buildBackendItemPayload(item));
+      }
+      await loadBackendCart();
+    } catch (err) {
+      console.error('[App] error syncing local cart to backend', err);
+    }
+  };
+
+  // Load cart from backend when customer authenticates
+  useEffect(() => {
+    const token = tokenStorage.get();
+    if (!token) {
+      setCart([]);
+      return;
+    }
+
+    if (user.isAuthenticated && user.role === 'cliente') {
+      void loadBackendCart();
+    } else if (!user.isAuthenticated) {
+      setCart([]);
+    }
+  }, [user.isAuthenticated, user.role]);
 
   // Global Orders Ledger (Shared state across cook, driver, customer and admin dashboard)
   const [orders, setOrders] = useState<ServerOrder[]>([
     {
       id: '9421',
-      customerName: 'Ricardo Gareca',
+      customerName: 'Eli Flores',
       phone: '+51 987 654 321',
       address: 'Calle del Sol 234, Miraflores',
       total: 65.00,
@@ -188,6 +343,8 @@ export default function App() {
     }
   ]);
 
+  
+
   // Interactive restaurant tables for WaiterDashboard
   const [tables, setTables] = useState<TableState[]>(() => {
     const tStates = ['free', 'occupied', 'free', 'free', 'occupied', 'free', 'occupied', 'free', 'free', 'free', 'occupied', 'free', 'free', 'free', 'occupied'];
@@ -209,6 +366,16 @@ export default function App() {
     }));
   });
 
+  useEffect(() => {
+    if (activeView !== 'cook') return;
+    if (orders.some(order => order.id === SIMULATED_COOK_ORDER_ID)) return;
+
+    setOrders(prev => [SIMULATED_COOK_ORDER, ...prev]);
+  }, [activeView, orders]);
+
+  // NOTE: Removed automatic transition for simulated cook orders.
+  // The chef should manually mark simulated orders as ready via the UI.
+
   // Track customer checkout progress
   const [recentCheckoutOrder, setRecentCheckoutOrder] = useState<ServerOrder | null>(null);
 
@@ -223,7 +390,7 @@ export default function App() {
   };
 
   // Add customized item from product screen
-  const handleAddCustomizedToCart = (
+  const handleAddCustomizedToCart = async (
     item: MenuItem, 
     customization: {
       size: 'Personal' | 'Mediana' | 'Familiar';
@@ -233,80 +400,151 @@ export default function App() {
     quantity: number,
     finalPrice: number
   ) => {
-    const serializedToppings = [...customization.toppings].sort().join(',');
-    const cartId = `${item.id}-${customization.size}-${customization.crust}-${serializedToppings}`;
+    const cartId = `${item.id}-${customization.size}-${customization.crust}-${[...customization.toppings].sort().join(',')}`;
+    const newItem: CartItem = {
+      cartId,
+      id: item.id,
+      name: item.name,
+      price: finalPrice,
+      image: item.image,
+      quantity,
+      customization,
+    };
 
-    setCart(prev => {
-      const matchIndex = prev.findIndex(i => i.cartId === cartId);
-      if (matchIndex > -1) {
-        const updated = [...prev];
-        updated[matchIndex].quantity += quantity;
-        return updated;
-      } else {
-        return [...prev, {
-          cartId,
-          id: item.id,
-          name: item.name,
-          price: finalPrice,
-          image: item.image,
-          quantity,
-          customization
-        }];
+    if (user.isAuthenticated && user.role === 'cliente') {
+      try {
+        const carrito = await agregarAlCarrito(buildBackendItemPayload(newItem));
+        setCart(mapBackendCarritoToCartItems(carrito));
+      } catch (error) {
+        console.error('[App] error adding customized item to backend cart', error);
+        setCart(prev => {
+          const matchIndex = prev.findIndex(i => i.cartId === cartId);
+          if (matchIndex > -1) {
+            const updated = [...prev];
+            updated[matchIndex].quantity += quantity;
+            return updated;
+          }
+          return [...prev, newItem];
+        });
       }
-    });
+    } else {
+      setCart(prev => {
+        const matchIndex = prev.findIndex(i => i.cartId === cartId);
+        if (matchIndex > -1) {
+          const updated = [...prev];
+          updated[matchIndex].quantity += quantity;
+          return updated;
+        }
+        return [...prev, newItem];
+      });
+    }
 
     triggerToast(`¡Añadido: ${quantity} x ${item.name} (${customization.size})!`);
     handleNavigate('cart');
   };
 
-  const handleAddToCart = (item: MenuItem, size?: string) => {
+  const handleAddToCart = async (item: MenuItem, size?: string) => {
     const cartId = `${item.id}-standard`;
-    setCart(prev => {
-      const matchIndex = prev.findIndex(i => i.cartId === cartId);
-      if (matchIndex > -1) {
-        const updated = [...prev];
-        updated[matchIndex].quantity += 1;
-        return updated;
-      } else {
-        return [...prev, {
-          cartId,
-          id: item.id,
-          name: item.name,
-          price: item.price,
-          image: item.image,
-          quantity: 1,
-          customization: size ? {
-            size: size as any,
-            crust: 'Masa Madre Clásica',
-            toppings: []
-          } : undefined
-        }];
+    const newItem: CartItem = {
+      cartId,
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      image: item.image,
+      quantity: 1,
+      customization: size ? {
+        size: size as any,
+        crust: 'Masa Madre Clásica',
+        toppings: []
+      } : undefined
+    };
+
+    if (user.isAuthenticated && user.role === 'cliente') {
+      try {
+        const carrito = await agregarAlCarrito(buildBackendItemPayload(newItem));
+        setCart(mapBackendCarritoToCartItems(carrito));
+      } catch (error) {
+        console.error('[App] error adding item to backend cart', error);
+        setCart(prev => {
+          const matchIndex = prev.findIndex(i => i.cartId === cartId);
+          if (matchIndex > -1) {
+            const updated = [...prev];
+            updated[matchIndex].quantity += 1;
+            return updated;
+          }
+          return [...prev, newItem];
+        });
       }
-    });
+    } else {
+      setCart(prev => {
+        const matchIndex = prev.findIndex(i => i.cartId === cartId);
+        if (matchIndex > -1) {
+          const updated = [...prev];
+          updated[matchIndex].quantity += 1;
+          return updated;
+        }
+        return [...prev, newItem];
+      });
+    }
+
     triggerToast(`Añadido ${item.name} al carrito.`);
   };
 
-  const handleUpdateQuantity = (cartId: string, quantity: number) => {
-    setCart(prev => prev.map(item => item.cartId === cartId ? { ...item, quantity } : item));
-  };
+  const handleUpdateQuantity = async (cartId: string, quantity: number) => {
+    const matched = cart.find(item => item.cartId === cartId);
+    if (!matched) return;
 
-  const handleRemoveItem = (cartId: string) => {
-    const matched = cart.find(i => i.cartId === cartId);
-    setCart(prev => prev.filter(item => item.cartId !== cartId));
-    if (matched) {
-      triggerToast(`Eliminado ${matched.name} del carro.`, 'info');
+    if (user.isAuthenticated && user.role === 'cliente' && matched.backendItemId != null) {
+      try {
+        const carrito = await actualizarCantidadItem(matched.backendItemId, quantity);
+        setCart(mapBackendCarritoToCartItems(carrito));
+      } catch (error) {
+        console.error('[App] error updating backend cart item quantity', error);
+        setCart(prev => prev.map(item => item.cartId === cartId ? { ...item, quantity } : item));
+      }
+    } else {
+      setCart(prev => prev.map(item => item.cartId === cartId ? { ...item, quantity } : item));
     }
   };
 
-  const handleClearCart = () => {
-    setCart([]);
+  const handleRemoveItem = async (cartId: string) => {
+    const matched = cart.find(i => i.cartId === cartId);
+    if (!matched) return;
+
+    if (user.isAuthenticated && user.role === 'cliente' && matched.backendItemId != null) {
+      try {
+        const carrito = await eliminarDelCarrito(matched.backendItemId);
+        setCart(mapBackendCarritoToCartItems(carrito));
+      } catch (error) {
+        console.error('[App] error removing backend cart item', error);
+        setCart(prev => prev.filter(item => item.cartId !== cartId));
+      }
+    } else {
+      setCart(prev => prev.filter(item => item.cartId !== cartId));
+    }
+
+    triggerToast(`Eliminado ${matched.name} del carro.`, 'info');
+  };
+
+  const handleClearCart = async () => {
+    if (user.isAuthenticated && user.role === 'cliente') {
+      try {
+        await vaciarCarrito();
+        setCart([]);
+      } catch (error) {
+        console.error('[App] error clearing backend cart', error);
+        setCart([]);
+      }
+    } else {
+      setCart([]);
+    }
   };
 
   const mapBackendRolesToAppRole = (roles: string[]): UserProfile['role'] => {
     const upper = roles.map(r => r.toUpperCase());
-    if (upper.includes('ADMIN')) return 'admin';
+    if (upper.includes('ADMIN') || upper.includes('ROLE_ADMIN')) return 'admin';
     if (upper.includes('MESERO') || upper.includes('WAITER')) return 'mesero';
-    if (upper.includes('COCINERO') || upper.includes('COOK')) return 'cocinero';
+    if (upper.includes('COCINA') || upper.includes('COCINERO') || upper.includes('COOK')) return 'cocinero';
     if (upper.includes('REPARTIDOR') || upper.includes('DELIVERY')) return 'repartidor';
     return 'cliente';
   };
@@ -326,7 +564,22 @@ export default function App() {
     setUser(userProfile);
     saveStoredUser(userProfile);
     triggerToast(`¡Bienvenido al Club de Mike, ${payload.fullName}! Descuento de socio activado.`);
-    if (cart.length > 0) {
+
+    if (role === 'cliente') {
+      void syncLocalCartToBackend(cart);
+    }
+
+    if (role === 'admin') {
+      handleNavigate('admin');
+    } else if (role === 'mesero') {
+      handleNavigate('waiter');
+      void loadKitchenOrders();
+    } else if (role === 'cocinero') {
+      handleNavigate('cook');
+      void loadKitchenOrders();
+    } else if (role === 'repartidor') {
+      handleNavigate('delivery-driver');
+    } else if (cart.length > 0) {
       handleNavigate('cart');
     } else {
       handleNavigate('home');
@@ -346,6 +599,9 @@ export default function App() {
     setUser(userProfile);
     saveStoredUser(userProfile);
     triggerToast(`¡Bienvenido, ${fullName}! Te has registrado con éxito.`);
+
+    void syncLocalCartToBackend(cart);
+
     if (cart.length > 0) {
       handleNavigate('cart');
     } else {
@@ -374,8 +630,10 @@ export default function App() {
       handleNavigate('home');
     } else if (newRole === 'mesero') {
       handleNavigate('waiter');
+      void loadKitchenOrders();
     } else if (newRole === 'cocinero') {
       handleNavigate('cook');
+      void loadKitchenOrders();
     } else if (newRole === 'repartidor') {
       handleNavigate('delivery-driver');
     } else if (newRole === 'admin') {
@@ -385,39 +643,94 @@ export default function App() {
     triggerToast(`Cambiado a perfil: ${newRole.toUpperCase()}`, 'info');
   };
 
+  const loadKitchenOrders = async () => {
+    try {
+      const pedidos = await listarPedidosCocina('PAGADO');
+      const mapped = pedidos.map(mapPedidoToServerOrder);
+      setOrders(prev => mergeKitchenOrders(prev, mapped));
+    } catch (error) {
+      console.error('[App] error cargando pedidos de cocina', error);
+    }
+  };
+
+  useEffect(() => {
+    if (user.isAuthenticated && (user.role === 'cocinero' || user.role === 'mesero')) {
+      void loadKitchenOrders();
+    }
+  }, [user.isAuthenticated, user.role]);
+
   // Checkout submission handler
-  const handlePlaceOrder = (orderData: {
+  const handlePlaceOrder = async (orderData: {
     deliveryMethod: 'delivery' | 'pickup';
     address?: string;
     district?: string;
     paymentMethod: 'card' | 'digital_wallet' | 'cash';
+    lat?: number;
+    lng?: number;
   }) => {
-    // Check if delivery district is out of range
     if (orderData.deliveryMethod === 'delivery' && orderData.district === 'Ate Vitarte') {
-      // Out of delivery coverage warning view
       handleNavigate('coverage');
       return;
     }
 
-    // Add order to database list
-    const newOrder: ServerOrder = {
-      id: Math.floor(1000 + Math.random() * 9000).toString(),
-      customerName: user.fullName || 'Invitado Rápido',
-      phone: '+51 987 654 321',
-      address: orderData.address || 'Calle Las Camelias 412',
-      district: orderData.district || 'Miraflores',
-      total: cart.reduce((tot, i) => tot + i.price * i.quantity, 0) + (orderData.deliveryMethod === 'delivery' ? 5 : 0),
-      status: 'requested',
-      elapsedMinutes: 0,
-      deliveryMethod: orderData.deliveryMethod,
-      items: [...cart]
+    if (!cart.length) {
+      triggerToast('Tu carrito está vacío. Agrega productos antes de pagar.', 'info');
+      handleNavigate('cart');
+      return;
+    }
+
+    const payload: CheckoutRequest = {
+      tipoEntrega: orderData.deliveryMethod === 'delivery' ? 'DELIVERY' : 'RECOGER',
+      metodoPago: 'SIMULADO',
+      direccion: orderData.deliveryMethod === 'delivery' ? {
+        lat: orderData.lat ?? 0,
+        lng: orderData.lng ?? 0,
+        address: orderData.address ?? '',
+        district: orderData.district
+      } : undefined,
     };
 
-    setOrders(prev => [newOrder, ...prev]);
-    setRecentCheckoutOrder(newOrder);
-    setCart([]); // Clear cart
-    triggerToast('¡Pedido reservado magníficamente!', 'success');
-    handleNavigate('track-order');
+    try {
+      const response = await checkoutPedido(payload);
+      const newOrder: ServerOrder = {
+        id: response.pedidoId,
+        customerName: user.fullName || 'Invitado Rápido',
+        phone: user.phone || '+51 987 654 321',
+        address: orderData.address || 'Calle Las Camelias 412',
+        district: orderData.district || 'Miraflores',
+        total: cart.reduce((tot, i) => tot + i.price * i.quantity, 0) + (orderData.deliveryMethod === 'delivery' ? 5 : 0),
+        status: 'requested',
+        elapsedMinutes: 0,
+        deliveryMethod: orderData.deliveryMethod,
+        items: [...cart],
+        paymentUrl: response.pagoUrl,
+      };
+
+      if (user.isAuthenticated && user.role === 'cliente') {
+        try {
+          await vaciarCarrito();
+        } catch (e) {
+          console.warn('[App] could not clear backend cart after checkout', e);
+        }
+      }
+
+      setOrders(prev => [newOrder, ...prev]);
+      setRecentCheckoutOrder(newOrder);
+      setCart([]);
+      triggerToast(`Pedido ${response.pedidoId} creado. Revisa el link de pago.`, 'success');
+      handleNavigate('track-order');
+    } catch (error: any) {
+      // Improved error logging for backend response inspection
+      console.error('[App] error procesando checkout', error);
+      if (error?.response) {
+        console.error('[App] checkout response status:', error.response.status);
+        console.error('[App] checkout response data:', error.response.data);
+        const serverMsg = error.response.data?.message || error.response.data || null;
+        triggerToast(serverMsg ? `Error: ${serverMsg}` : 'No se pudo completar el pago. Intenta de nuevo más tarde.', 'info');
+      } else {
+        triggerToast('No se pudo completar el pago. Intenta de nuevo más tarde.', 'info');
+      }
+    }
   };
 
   // Waiter triggers update
@@ -430,9 +743,41 @@ export default function App() {
     triggerToast(`Comanda #${order.id} enviada directamente al horno.`);
   };
 
-  // Cook / Chef updates comanda queue
-  const handleUpdateOrderStatus = (orderId: string, status: 'requested' | 'processing' | 'ready' | 'delivered') => {
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+  const handleMarkPedidoPreparado = async (
+    orderId: string,
+    accion: 'LISTO_ENTREGA' | 'LISTO_RECOGER'
+  ) => {
+    if (orderId === SIMULATED_COOK_ORDER_ID) {
+      setOrders(prev => prev.map(order => order.id === orderId ? { ...order, status: 'ready' } : order));
+      triggerToast(`Pedido simulado #${orderId} marcado como listo en la cocina.`, 'success');
+      return;
+    }
+
+    try {
+      const updatedPedido = await marcarPedidoPreparado(orderId, { accion });
+      const mappedOrder = mapPedidoToServerOrder(updatedPedido);
+      setOrders(prev => prev.map(order => (order.id === orderId ? mappedOrder : order)));
+      triggerToast(`Pedido #${orderId} marcado como ${accion === 'LISTO_ENTREGA' ? 'listo para entrega' : 'listo para recoger'}.`, 'success');
+    } catch (error) {
+      console.error('[App] error marcando pedido preparado', error);
+      triggerToast('No se pudo actualizar el estado del pedido en cocina.', 'info');
+    }
+  };
+
+  const handleUpdateOrderStatus = async (orderId: string, status: 'requested' | 'processing' | 'ready' | 'delivered') => {
+    let targetOrder: ServerOrder | undefined;
+    setOrders(prev => prev.map(o => {
+      if (o.id === orderId) {
+        targetOrder = o;
+        return { ...o, status };
+      }
+      return o;
+    }));
+
+    if (status === 'ready' && targetOrder && targetOrder.status !== 'ready' && !targetOrder.isSimulated) {
+      const action = targetOrder.deliveryMethod === 'delivery' ? 'LISTO_ENTREGA' : 'LISTO_RECOGER';
+      await handleMarkPedidoPreparado(orderId, action);
+    }
   };
 
   // Admin menu modifiers
@@ -500,6 +845,7 @@ export default function App() {
             onClearCart={handleClearCart}
             user={{ ...user, isAuthenticated: user.isAuthenticated }}
             onNavigate={handleNavigate}
+            onPlaceOrder={handlePlaceOrder}
           />
         );
       case 'checkout':
@@ -538,7 +884,9 @@ export default function App() {
       case 'waiter':
         return (
           <WaiterDashboard 
-            tables={tables} 
+            orders={orders}
+            tables={tables}
+            menuItems={menuItems}
             onUpdateTableState={handleUpdateTableStatus}
             onSubmitWaiterOrder={handleSubmitWaiterOrder}
           />
@@ -548,6 +896,13 @@ export default function App() {
           <CookDashboard 
             orders={orders} 
             onUpdateOrderStatus={handleUpdateOrderStatus} 
+            onMarkPrepared={handleMarkPedidoPreparado}
+            onSimulateOrder={() => {
+              if (orders.some(o => o.id === SIMULATED_COOK_ORDER_ID)) return;
+              setOrders(prev => [SIMULATED_COOK_ORDER, ...prev]);
+              setCookSimulationTriggered(false);
+              triggerToast('Pedido simulado insertado: Gabriel Marreros', 'success');
+            }}
           />
         );
       case 'delivery-driver':
@@ -565,6 +920,7 @@ export default function App() {
             onAddMenuItem={handleAddMenuItem} 
             onUpdateMenuItem={handleUpdateMenuItem} 
             onDeleteMenuItem={handleDeleteMenuItem} 
+            onNavigate={handleNavigate}
           />
         );
       default:
@@ -575,67 +931,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-between select-none">
       
-      {/* Sticky Demo Role-Selector Bar at the very top of the screen */}
-      <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 text-white font-sans text-xs px-6 py-2.5 flex flex-col sm:flex-row items-center justify-between select-none shadow-md border-b border-white/10 shrink-0 sticky top-0 z-[60]">
-        <div className="flex items-center gap-2 mb-2 sm:mb-0">
-          <span className="p-1 bg-lime-500 rounded text-emerald-950 font-black text-[9px] uppercase tracking-wider">MODO DEMO MULTI-ROL</span>
-          <span className="text-emerald-100 font-semibold text-[11px]">Navega por las vistas de Mike's Oven haciendo clic en cada rol:</span>
-        </div>
-        
-        <div className="flex flex-wrap gap-1.5 font-bold">
-          <button 
-            onClick={() => handleRoleSwitch('cliente')} 
-            className={`px-3 py-1 rounded-lg transition-all text-[11px] cursor-pointer ${
-              user.role === 'cliente' 
-                ? 'bg-lime-500 text-emerald-950 font-black scale-105 shadow-sm' 
-                : 'text-slate-300 hover:text-white bg-white/5 hover:bg-white/10'
-            }`}
-          >
-            🍕 Cliente
-          </button>
-          <button 
-            onClick={() => handleRoleSwitch('mesero')} 
-            className={`px-3 py-1 rounded-lg transition-all text-[11px] cursor-pointer ${
-              user.role === 'mesero' 
-                ? 'bg-lime-500 text-emerald-950 font-black scale-105 shadow-sm' 
-                : 'text-slate-300 hover:text-white bg-white/5 hover:bg-white/10'
-            }`}
-          >
-            📋 Mesero
-          </button>
-          <button 
-            onClick={() => handleRoleSwitch('cocinero')} 
-            className={`px-3 py-1 rounded-lg transition-all text-[11px] cursor-pointer ${
-              user.role === 'cocinero' 
-                ? 'bg-lime-500 text-emerald-950 font-black scale-105 shadow-sm' 
-                : 'text-slate-300 hover:text-white bg-white/5 hover:bg-white/10'
-            }`}
-          >
-            👨‍🍳 Cocinero
-          </button>
-          <button 
-            onClick={() => handleRoleSwitch('repartidor')} 
-            className={`px-3 py-1 rounded-lg transition-all text-[11px] cursor-pointer ${
-              user.role === 'repartidor' 
-                ? 'bg-lime-500 text-emerald-950 font-black scale-105 shadow-sm' 
-                : 'text-slate-300 hover:text-white bg-white/5 hover:bg-white/10'
-            }`}
-          >
-            🛵 Repartidor
-          </button>
-          <button 
-            onClick={() => handleRoleSwitch('admin')} 
-            className={`px-3 py-1 rounded-lg transition-all text-[11px] cursor-pointer ${
-              user.role === 'admin' 
-                ? 'bg-lime-500 text-emerald-950 font-black scale-105 shadow-sm' 
-                : 'text-slate-300 hover:text-white bg-white/5 hover:bg-white/10'
-            }`}
-          >
-            💼 Admin
-          </button>
-        </div>
-      </div>
-
       {/* Toast Alert pop notification block */}
       {toast && (
         <div className="fixed top-24 right-5 z-[9999] bg-emerald-950 text-white border border-emerald-900 rounded-xl p-4 shadow-2xl flex items-center gap-3 animate-fade-in text-xs font-sans">

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { CreditCard, Truck, Store, MapPin, ShieldCheck, HelpCircle, User, FileText, CheckCircle } from 'lucide-react';
 import { CartItem, UserProfile } from '../types';
+import LocationMap from './LocationMap';
 
 interface CheckoutViewProps {
   cart: CartItem[];
@@ -12,6 +13,8 @@ interface CheckoutViewProps {
     address?: string;
     district?: string;
     paymentMethod: 'card' | 'digital_wallet' | 'cash';
+    lat?: number;
+    lng?: number;
   }) => void;
 }
 
@@ -26,6 +29,8 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
   const [expiry, setExpiry] = useState('');
   const [cvc, setCvc] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
+  const [mapLat, setMapLat] = useState(-12.0464);
+  const [mapLng, setMapLng] = useState(-77.0428);
 
   // Compute order totals
   const subtotal = useMemo(() => {
@@ -62,7 +67,9 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
       deliveryMethod,
       address: deliveryMethod === 'delivery' ? `${address} ${apt}` : undefined,
       district: deliveryMethod === 'delivery' ? district : undefined,
-      paymentMethod
+      paymentMethod,
+      lat: deliveryMethod === 'delivery' ? mapLat : undefined,
+      lng: deliveryMethod === 'delivery' ? mapLng : undefined,
     });
   };
 
@@ -164,6 +171,19 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
                     required={deliveryMethod === 'delivery'}
                   />
                 </div>
+
+                <LocationMap 
+                  onLocationSelect={(lat, lng, addr) => {
+                    setMapLat(lat);
+                    setMapLng(lng);
+                    if (!address) {
+                      setAddress(addr);
+                    }
+                  }}
+                  initialLat={mapLat}
+                  initialLng={mapLng}
+                  initialAddress={address || 'Miraflores, Lima'}
+                />
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -416,7 +436,7 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
                 <li key={item.cartId} className={`flex justify-between items-start ${idx > 0 ? 'pt-4' : ''}`}>
                   <div className="flex gap-3">
                     <img 
-                      src={item.image} 
+                      src={item.image || 'https://via.placeholder.com/96?text=Sin+imagen'} 
                       alt={item.name} 
                       className="w-14 h-14 object-cover rounded-lg shrink-0"
                     />

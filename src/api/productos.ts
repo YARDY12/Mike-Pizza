@@ -28,6 +28,30 @@ export const createProducto = async (payload: CreateProductoPayload): Promise<un
   return res.data;
 };
 
+export interface CreateSimpleProductoPayload {
+  categoriaId: number;
+  nombre: string;
+  descripcion?: string;
+  precio: number;
+  stock: number;
+  imagen: File;
+}
+
+export const createSimpleProducto = async (payload: CreateSimpleProductoPayload): Promise<unknown> => {
+  const form = new FormData();
+  form.append('categoriaId', String(payload.categoriaId));
+  form.append('nombre', payload.nombre);
+  if (payload.descripcion && payload.descripcion.trim().length > 0) {
+    form.append('descripcion', payload.descripcion);
+  }
+  form.append('precio', String(payload.precio));
+  form.append('stock', String(payload.stock));
+  form.append('imagen', payload.imagen);
+
+  const res = await api.post<unknown>('productos/simple', form);
+  return res.data;
+};
+
 export const deleteProducto = async (id: string | number): Promise<void> => {
   await api.delete(`productos/${id}`);
 };

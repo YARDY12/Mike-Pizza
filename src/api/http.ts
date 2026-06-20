@@ -1,11 +1,17 @@
 import axios, { AxiosHeaders } from 'axios';
 import { tokenStorage } from './tokenStorage';
 
-const baseURL = import.meta.env.VITE_API_URL || '/api';
+const rawBase = import.meta.env.VITE_API_URL || 'http://localhost:8082/api';
+// Ensure baseURL always ends with a single trailing slash so relative paths like
+// 'carrito/items' concatenate correctly to become '/api/carrito/items'.
+const baseURL = String(rawBase).replace(/\/+$/, '') + '/';
 
 export const api = axios.create({
   baseURL,
   timeout: 15000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
 });
 
 api.interceptors.request.use((config) => {
