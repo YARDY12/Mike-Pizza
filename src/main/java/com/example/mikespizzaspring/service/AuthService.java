@@ -41,7 +41,8 @@ public class AuthService {
     @Autowired
     private SecurityConfig securityConfig;
 
-    @Transactional(readOnly = true)
+
+    @Transactional
     public AuthResponse login(AuthRequest request) {
         Usuario usuario = usuarioRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new IllegalArgumentException("Credenciales invalidas"));
@@ -55,6 +56,7 @@ public class AuthService {
                 .collect(Collectors.toSet());
 
         String token = securityConfig.generateToken(usuario.getEmail(), roles);
+
 
         AuthResponse response = new AuthResponse();
         response.setToken(token);

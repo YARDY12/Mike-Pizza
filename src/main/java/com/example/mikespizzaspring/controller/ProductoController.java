@@ -49,6 +49,23 @@ public class ProductoController {
         }
     }
 
+    @PostMapping(value = "/simple", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Producto> createSimple(@RequestParam("categoriaId") Long categoriaId,
+                                                 @RequestParam("nombre") String nombre,
+                                                 @RequestParam(value = "descripcion", required = false) String descripcion,
+                                                 @RequestParam("precio") BigDecimal precio,
+                                                 @RequestParam("stock") Integer stock,
+                                                 @RequestParam("imagen") MultipartFile imagen) throws IOException {
+        try {
+            Producto created = productoService.crearProductoSimple(
+                    categoriaId, nombre, descripcion, precio, stock, imagen);
+            return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
+        }
+    }
+
+
     @GetMapping
     public ResponseEntity<List<Producto>> getAll() {
         return ResponseEntity.ok(productoService.findAll());

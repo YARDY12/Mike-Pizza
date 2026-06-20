@@ -83,6 +83,41 @@ public class ProductoService {
         return productoRepository.save(producto);
     }
 
+    public Producto crearProductoSimple(Long categoriaId,
+                                        String nombre,
+                                        String descripcion,
+                                        BigDecimal precio,
+                                        Integer stock,
+                                        MultipartFile imagen) throws IOException {
+        if (stock == null || stock <= 0) {
+            throw new IllegalArgumentException("El stock debe ser mayor a cero");
+        }
+        if (precio == null || precio.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("El precio debe ser mayor a cero");
+        }
+        if (imagen == null || imagen.isEmpty()) {
+            throw new IllegalArgumentException("La imagen es obligatoria");
+        }
+
+        CategoriaProducto categoria = categoriaProductoRepository.findById(categoriaId)
+                .orElseThrow(() -> new IllegalArgumentException("Categoria no encontrada"));
+
+        Producto producto = new Producto();
+        producto.setCategoriaProducto(categoria);
+        producto.setNombre(nombre);
+        producto.setDescripcion(descripcion);
+        producto.setPrecio(precio);
+        producto.setStock(stock);
+        producto.setActivo(true);
+        producto.setImagenUrl(cloudinaryService.subirImagen(imagen));
+
+        // Un solo precio con tamaño UNICO
+        producto.addPrecio(crearPrecio(producto, TamanoPizza.UNICO, precio));
+
+        return productoRepository.save(producto);
+    }
+
+
     private ProductoPrecio crearPrecio(Producto producto, TamanoPizza tamano, BigDecimal precio) {
         ProductoPrecio productoPrecio = new ProductoPrecio();
         productoPrecio.setProducto(producto);

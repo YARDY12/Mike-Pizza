@@ -40,4 +40,24 @@ public class PedidoController {
         pedidoService.delete(id);
         return ResponseEntity.noContent().build();
     }
+
+    @Autowired
+    private com.example.mikespizzaspring.repository.UsuarioRepository usuarioRepository;
+
+    private Long getUsuarioId(org.springframework.security.core.Authentication authentication) {
+        if (authentication == null) return 1L;
+        String name = authentication.getName();
+        try { return Long.valueOf(name); } catch (Exception e) {
+            var maybe = usuarioRepository.findByEmail(name);
+            return maybe.map(u -> u.getIdUsuario()).orElse(1L);
+        }
+    }
+
+    @PostMapping("/checkout")
+    public ResponseEntity<com.example.mikespizzaspring.dto.CheckoutResponse> checkout(@RequestBody com.example.mikespizzaspring.dto.CheckoutRequest req, org.springframework.security.core.Authentication authentication) {
+        Long usuarioId = getUsuarioId(authentication);
+        Pedido pedido = pedidoService.createPedidoFromCarrito(usuarioId, req);
+        String pagoUrl = "/api/pagos/simular"; // client should POST {pedidoId} to simulate payment
+        return ResponseEntity.ok(new com.example.mikespizzaspring.dto.CheckoutResponse(pedido.getIdPedido(), pagoUrl));
+    }
 }

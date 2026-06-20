@@ -1,5 +1,6 @@
 package com.example.mikespizzaspring.controller;
 
+import com.example.mikespizzaspring.dto.ActualizarEmailRequest;
 import com.example.mikespizzaspring.dto.CrearEmpleadoRequest;
 import com.example.mikespizzaspring.dto.RegistroAdminRequest;
 import com.example.mikespizzaspring.dto.UsuarioResponse;
@@ -66,6 +67,17 @@ public class UsuarioController {
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         usuarioService.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{id}/email")
+    public ResponseEntity<UsuarioResponse> actualizarEmail(
+            @PathVariable Long id,
+            @RequestBody ActualizarEmailRequest request) {
+
+        Usuario usuarioActualizado =
+                usuarioService.actualizarEmail(id, request.getEmail());
+
+        return ResponseEntity.ok(toResponse(usuarioActualizado));
     }
 
     private UsuarioResponse toResponse(Usuario usuario) {

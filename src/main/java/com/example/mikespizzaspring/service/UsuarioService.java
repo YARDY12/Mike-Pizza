@@ -30,6 +30,25 @@ public class UsuarioService {
         usuarioRepository.deleteById(id);
     }
 
+    public Usuario actualizarEmail(Long idUsuario, String nuevoEmail) {
+
+        Usuario usuario = usuarioRepository.findById(idUsuario)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+        // Verifica si el email ya existe y pertenece a otro usuario
+        Optional<Usuario> usuarioExistente = usuarioRepository.findByEmail(nuevoEmail);
+
+        if (usuarioExistente.isPresent()
+                && !usuarioExistente.get().getIdUsuario().equals(idUsuario)) {
+
+            throw new RuntimeException("El correo ya está registrado");
+        }
+
+        usuario.setEmail(nuevoEmail);
+
+        return usuarioRepository.save(usuario);
+    }
+
     public Optional<Usuario> findByEmail(String email) {
         return usuarioRepository.findByEmail(email);
     }
