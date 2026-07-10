@@ -4,6 +4,16 @@ import { Inbox, RefreshCw, Check, Clock, Eye, AlertCircle, ChefHat, X } from 'lu
 import { ServerOrder } from '../types';
 import { listarPedidosCocina, PedidoKitchenDto } from '../api/cocina';
 
+const resolveItemName = (...values: Array<string | null | undefined>) => {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) return trimmed;
+    }
+  }
+  return 'Producto sin nombre';
+};
+
 interface CookDashboardProps {
   orders: ServerOrder[];
   onUpdateOrderStatus: (orderId: string, status: 'requested' | 'processing' | 'ready' | 'delivered') => void;
@@ -22,13 +32,26 @@ export default function CookDashboard({ orders, onUpdateOrderStatus, onMarkPrepa
       id: String(p.idPedido ?? p.codigo ?? `pedido-${Date.now()}`),
       customerName: p.clienteNombre,
       phone: p.telefono,
-      address: p.direccion,
-      district: p.distrito,
-      total: p.items.reduce((s, it) => s + it.precioUnitario * it.cantidad, 0),
-      status: p.estado?.toLowerCase() === 'pagado' || p.estado?.toLowerCase() === 'pendiente_pago' ? 'requested' : p.estado?.toLowerCase() === 'en proceso' ? 'processing' : 'ready',
+      address: [p.direccion?.calle, p.direccion?.numero].filter(Boolean).join(' '),
+      district: p.direccion?.distrito,
+      total: typeof p.total === 'number' ? p.total : p.items.reduce((s, it) => s + it.precioUnitario * it.cantidad, 0),
+      status: p.estado?.toLowerCase() === 'pagado' || p.estado?.toLowerCase() === 'pendiente_pago'
+        ? 'requested'
+        : p.estado?.toLowerCase() === 'en proceso' || p.estado?.toLowerCase() === 'processing'
+          ? 'processing'
+          : p.estado?.toLowerCase() === 'listo_para_reparto' || p.estado?.toLowerCase() === 'listo_para_recojo' || p.estado?.toLowerCase() === 'ready'
+            ? 'ready'
+            : 'requested',
       elapsedMinutes: 0,
-      deliveryMethod: p.tipoEntrega === 'DELIVERY' ? 'delivery' : 'pickup',
-      items: p.items.map((it, idx) => ({ cartId: `pedido-${p.idPedido}-${idx}`, id: String(it.id), name: it.nombre, price: it.precioUnitario, quantity: it.cantidad, image: 'https://via.placeholder.com/96?text=Sin+imagen' })),
+      deliveryMethod: p.tipoEntrega?.toUpperCase() === 'DELIVERY' ? 'delivery' : 'pickup',
+      items: p.items.map((it, idx) => ({
+        cartId: `pedido-${p.idPedido}-${idx}`,
+        id: String(it.productoId ?? it.idPedidoDetalle ?? idx),
+        name: resolveItemName(it.nombreProducto, it.nombre, `Producto ${idx + 1}`),
+        price: it.precioUnitario,
+        quantity: it.cantidad,
+        image: 'https://via.placeholder.com/96?text=Sin+imagen'
+      })),
     });
 
     const fetchOnce = async () => {

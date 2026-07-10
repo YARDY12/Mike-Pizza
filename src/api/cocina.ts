@@ -1,21 +1,36 @@
 import { api } from './http';
 
 export interface PedidoDetalleDto {
-  id: string;
-  nombre: string;
+  idPedidoDetalle?: number;
+  productoId?: number;
+  nombreProducto?: string;
+  nombre?: string;
   cantidad: number;
   precioUnitario: number;
+  subtotal?: number;
 }
 
 export interface PedidoKitchenDto {
   idPedido: number;
   codigo?: string;
+  tipoEntrega?: string;
+  estado: string;
   clienteNombre: string;
   telefono?: string;
-  direccion?: string;
-  distrito?: string;
-  estado: string;
-  tipoEntrega: 'DELIVERY' | 'RECOGER';
+  direccion?: {
+    alias?: string;
+    calle?: string;
+    numero?: string;
+    referencia?: string;
+    distrito?: string;
+    ciudad?: string;
+    lat?: number;
+    lng?: number;
+  } | null;
+  subtotal?: number;
+  costoEnvio?: number;
+  total?: number;
+  fechaCreacion?: string;
   pagoUrl?: string;
   items: PedidoDetalleDto[];
 }

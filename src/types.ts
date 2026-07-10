@@ -35,6 +35,7 @@ export interface PromoCode {
 }
 
 export interface UserProfile {
+  backendUserId?: number;
   fullName: string;
   email: string;
   phone?: string;
@@ -73,4 +74,5 @@ export interface ServerOrder {
   paymentUrl?: string;
   tableId?: number;
   notes?: string;
+  isSimulated?: boolean;
 }

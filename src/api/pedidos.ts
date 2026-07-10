@@ -1,25 +1,31 @@
 import { api } from './http';
 
 export interface DireccionRequest {
-  lat: number;
-  lng: number;
-  address?: string;
-  district?: string;
+  alias?: string;
+  calle?: string;
+  numero?: string;
+  referencia?: string;
+  distrito?: string;
+  ciudad?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface CheckoutRequest {
-  tipoEntrega: 'DELIVERY' | 'RECOGER';
+  tipoEntrega: 'DELIVERY' | 'RECOGER' | 'PICKUP';
   direccion?: DireccionRequest;
-  metodoPago: 'SIMULADO';
+  metodoPago: string;
 }
 
 export interface CheckoutResponse {
-  pedidoId: string;
-  pagoUrl: string;
+  pedidoId: string | number;
+  pagoUrl?: string;
+  estado?: string;
 }
 
-export const checkoutPedido = async (payload: CheckoutRequest): Promise<CheckoutResponse> => {
-  const res = await api.post<CheckoutResponse>('pedidos/checkout', payload);
+export const checkoutPedido = async (payload: CheckoutRequest, usuarioId?: number): Promise<CheckoutResponse> => {
+  const config = usuarioId != null ? { params: { usuarioId } } : undefined;
+  const res = await api.post<CheckoutResponse>('pedidos/checkout', payload, config);
   return res.data;
 };
 

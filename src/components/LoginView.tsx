@@ -6,7 +6,7 @@ import { tokenStorage } from '../api/tokenStorage';
 
 interface LoginViewProps {
   onNavigate: (view: string) => void;
-  onLoginSuccess: (payload: { fullName: string; email: string; roles: string[]; phone?: string }) => void;
+  onLoginSuccess: (payload: { fullName: string; email: string; roles: string[]; phone?: string; backendUserId?: number }) => void;
 }
 
 export default function LoginView({ onNavigate, onLoginSuccess }: LoginViewProps) {
@@ -46,6 +46,7 @@ export default function LoginView({ onNavigate, onLoginSuccess }: LoginViewProps
         email: res.email ?? email,
         roles: Array.isArray(res.roles) ? res.roles : [],
         phone: res.telefono ?? (res as any).phone ?? undefined,
+        backendUserId: typeof res.idUsuario === 'number' ? res.idUsuario : undefined,
       };
       console.debug('[LoginView] login payload sent to app', loginPayload);
       onLoginSuccess(loginPayload);

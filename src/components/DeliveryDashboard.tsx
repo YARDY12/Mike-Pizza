@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Truck, MapPin, Phone, CheckCircle, Navigation, Award, Map, RefreshCw } from 'lucide-react';
+import { Truck, MapPin, Phone, CheckCircle, Navigation, Award, Map, RefreshCw, Clock3, Sparkles, PackageCheck } from 'lucide-react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { ServerOrder } from '../types';
 
 interface DeliveryDashboardProps {
@@ -8,17 +10,206 @@ interface DeliveryDashboardProps {
   onUpdateOrderStatus: (orderId: string, status: 'requested' | 'processing' | 'ready' | 'delivered') => void;
 }
 
+// Origin set to: Av. Argentina cuadra 2, Nuevo Chimbote 02710 (geocoded via Nominatim)
+const ORIGIN_COORDS = { lat: -9.1212923, lng: -78.5313757 };
+const DELIVERY_COORDS: Record<string, { lat: number; lng: number; label: string }> = {
+  '9430': { lat: -9.0895, lng: -78.5904, label: 'Gabriel Marreros' },
+  'sim-delivery-ana-torres': { lat: -9.0827, lng: -78.5942, label: 'Ana Torres' },
+  'sim-delivery-luis-ramirez': { lat: -9.0917, lng: -78.6005, label: 'Luis Ramírez' },
+};
+
+
 export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: DeliveryDashboardProps) {
   const [activeRouteId, setActiveRouteId] = useState<string | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const originMarkerRef = useRef<L.CircleMarker | null>(null);
+  const destinationMarkerRef = useRef<L.Marker | null>(null);
+  const routeLineRef = useRef<L.Polyline | null>(null);
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const geocodeCache = useRef<Record<string, { lat: number; lng: number; label: string }>>({});
 
-  // Ready/Delivering orders
-  const pendingDeliveries = orders.filter(o => 
+  const pendingDeliveries = orders.filter(o =>
     o.deliveryMethod === 'delivery' && (o.status === 'ready' || o.status === 'processing')
   );
 
+  const selectedOrder = pendingDeliveries.find(order => order.id === selectedOrderId) ?? pendingDeliveries[0] ?? null;
+
+  useEffect(() => {
+    if (!pendingDeliveries.length) {
+      setSelectedOrderId(null);
+      return;
+    }
+    if (!selectedOrderId || !pendingDeliveries.some(order => order.id === selectedOrderId)) {
+      setSelectedOrderId(pendingDeliveries[0].id);
+    }
+  }, [pendingDeliveries, selectedOrderId]);
+
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+
+    mapRef.current = L.map(mapContainerRef.current, {
+      center: [ORIGIN_COORDS.lat, ORIGIN_COORDS.lng],
+      zoom: 13,
+      zoomControl: true,
+      attributionControl: false,
+    });
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap contributors',
+    }).addTo(mapRef.current);
+
+    originMarkerRef.current = L.circleMarker([ORIGIN_COORDS.lat, ORIGIN_COORDS.lng], {
+      radius: 8,
+      color: '#166534',
+      fillColor: '#22c55e',
+      fillOpacity: 1,
+      weight: 2,
+    }).addTo(mapRef.current).bindPopup("Mike's Oven Pizza - Nuevo Chimbote");
+
+    return () => {
+      mapRef.current?.remove();
+      mapRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    let cancelled = false;
+
+    async function resolveAndDraw() {
+      if (!selectedOrder) {
+        if (destinationMarkerRef.current) {
+          destinationMarkerRef.current.remove();
+          destinationMarkerRef.current = null;
+        }
+        if (routeLineRef.current) {
+          routeLineRef.current.remove();
+          routeLineRef.current = null;
+        }
+        setRouteInfo(null);
+        setMapError(null);
+        mapRef.current.setView([ORIGIN_COORDS.lat, ORIGIN_COORDS.lng], 13);
+        return;
+      }
+
+      const cacheKey = `${selectedOrder.address}|${selectedOrder.district}`;
+
+      let destination = DELIVERY_COORDS[String(selectedOrder.id)] ?? null;
+
+      if (!destination) {
+        if (geocodeCache.current[cacheKey]) {
+          destination = geocodeCache.current[cacheKey];
+        } else {
+          try {
+            setIsGeocoding(true);
+            const q = `${selectedOrder.address}, ${selectedOrder.district || ''}, Nuevo Chimbote, Peru`;
+            const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
+            const res = await fetch(url, { headers: { 'User-Agent': 'Mike-Pizza-App/1.0' } });
+            const arr = await res.json();
+            if (arr && arr.length) {
+              destination = { lat: Number(arr[0].lat), lng: Number(arr[0].lon), label: selectedOrder.customerName };
+              geocodeCache.current[cacheKey] = destination;
+            } else {
+              setMapError('No se pudo geocodificar la dirección del pedido. Usando fallback si existe.');
+            }
+          } catch (e) {
+            console.error('[DeliveryDashboard] Geocode error', e);
+            setMapError('Error de geocodificación. Usando fallback si existe.');
+          } finally {
+            setIsGeocoding(false);
+          }
+        }
+      }
+
+      if (!destination) {
+        // nothing to draw
+        return;
+      }
+
+      // update destination marker
+      if (destinationMarkerRef.current) {
+        destinationMarkerRef.current.setLatLng([destination.lat, destination.lng]);
+        destinationMarkerRef.current.setPopupContent(destination.label);
+      } else {
+        destinationMarkerRef.current = L.marker([destination.lat, destination.lng], {
+          icon: L.divIcon({ className: 'text-2xl', html: '📍' }),
+        }).addTo(mapRef.current).bindPopup(destination.label);
+      }
+
+      // Debug info
+      console.log('[DeliveryDashboard] origin coords', ORIGIN_COORDS);
+      console.log('[DeliveryDashboard] destination coords', destination);
+
+      try { mapRef.current?.invalidateSize(); } catch (e) {}
+      mapRef.current?.setView([ORIGIN_COORDS.lat, ORIGIN_COORDS.lng], 13);
+
+      const routeUrl = `https://router.project-osrm.org/route/v1/driving/${ORIGIN_COORDS.lng},${ORIGIN_COORDS.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson`;
+      console.log('[DeliveryDashboard] routeUrl', routeUrl);
+
+      try {
+        const res = await fetch(routeUrl);
+        const data = await res.json();
+        const route = data.routes && data.routes[0] ? data.routes[0] : null;
+
+        if (!route || !route.geometry || !route.geometry.coordinates || route.distance === 0) {
+          console.warn('[DeliveryDashboard] OSRM returned no route or zero distance, using direct line fallback');
+          const coords: [number, number][] = [
+            [ORIGIN_COORDS.lat, ORIGIN_COORDS.lng],
+            [destination.lat, destination.lng],
+          ];
+
+          if (routeLineRef.current) routeLineRef.current.setLatLngs(coords as any);
+          else routeLineRef.current = L.polyline(coords as any, { color: '#f97316', weight: 4, opacity: 0.9, dashArray: '6 6' }).addTo(mapRef.current as L.Map);
+
+          const bounds = L.latLngBounds(coords as any);
+          bounds.extend([ORIGIN_COORDS.lat, ORIGIN_COORDS.lng]);
+          mapRef.current?.fitBounds(bounds, { padding: [40, 40] });
+
+          // haversine
+          const toRad = (v: number) => (v * Math.PI) / 180;
+          const R = 6371;
+          const dLat = toRad(destination.lat - ORIGIN_COORDS.lat);
+          const dLon = toRad(destination.lng - ORIGIN_COORDS.lng);
+          const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(toRad(ORIGIN_COORDS.lat)) * Math.cos(toRad(destination.lat)) * Math.sin(dLon/2) * Math.sin(dLon/2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          const km = Math.round(R * c * 10) / 10;
+          setRouteInfo({ distance: km, duration: Math.round((km/30)*60) });
+          setMapError(null);
+          return;
+        }
+
+        const geo = route.geometry;
+        const coords = geo.coordinates.map((point: [number, number]) => [point[1], point[0]] as [number, number]);
+
+        if (routeLineRef.current) routeLineRef.current.setLatLngs(coords);
+        else routeLineRef.current = L.polyline(coords, { color: '#16a34a', weight: 5, opacity: 0.8 }).addTo(mapRef.current as L.Map);
+
+        const bounds = L.latLngBounds(coords);
+        bounds.extend([ORIGIN_COORDS.lat, ORIGIN_COORDS.lng]);
+        mapRef.current?.fitBounds(bounds, { padding: [40, 40] });
+
+        setRouteInfo({ distance: Math.round(route.distance / 100) / 10, duration: Math.round(route.duration / 60) });
+        setMapError(null);
+      } catch (err) {
+        console.error('[DeliveryDashboard] route fetch error', err);
+        setMapError('No se pudo calcular la ruta. Mostrando línea directa como fallback.');
+      }
+    }
+
+    resolveAndDraw();
+
+    return () => { cancelled = true; };
+  }, [selectedOrder]);
+
   const handleStartDelivery = (orderId: string) => {
     setActiveRouteId(orderId);
-    // Move order to ready (on-the-way stage)
+    setSelectedOrderId(orderId);
     onUpdateOrderStatus(orderId, 'ready');
     alert(`Ruta de entrega iniciada para la comanda #${orderId}. ¡Buen viaje e impecable conducción!`);
   };
@@ -31,17 +222,24 @@ export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: Deliv
     alert(`¡Pedido #${orderId} registrado como ENTREGADO con éxito!`);
   };
 
+  const averageEta = pendingDeliveries.length
+    ? Math.round(pendingDeliveries.reduce((sum, order) => sum + (order.elapsedMinutes || 10), 0) / pendingDeliveries.length)
+    : 0;
+
+  const routeAddress = selectedOrder
+    ? [selectedOrder.address, selectedOrder.district].filter(Boolean).join(', ')
+    : 'Selecciona un pedido';
+  const destinationCoords = selectedOrder ? DELIVERY_COORDS[String(selectedOrder.id)] : null;
+
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 w-full font-sans">
-      
-      {/* Header Panel */}
-      <header className="mb-10 flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-100 pb-4">
+      <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-100 pb-4">
         <div>
           <span className="text-secondary font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 font-sans">
-            <Truck className="w-5 h-5 text-secondary" /> Módulo de Distribución Activo
+            <Truck className="w-5 h-5 text-secondary" /> Módulo de Delivery
           </span>
           <h1 className="text-3xl font-extrabold text-emerald-950 font-display mt-1">Panel de Delivery</h1>
-          <p className="text-slate-500 font-medium text-sm">Gestión rápida de rutas y entregas a domicilio de Mike's Oven.</p>
+          <p className="text-slate-500 font-medium text-sm">Ruta real de entrega desde Mike’s Oven Pizza en Nuevo Chimbote.</p>
         </div>
 
         <div className="bg-emerald-50 text-emerald-800 px-4 py-3 rounded-xl border border-emerald-100 shadow-sm text-xs font-bold flex items-center gap-2">
@@ -51,159 +249,169 @@ export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: Deliv
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        
-        {/* Left Column: Orders list */}
         <div className="lg:col-span-5 space-y-6">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 font-display">
-              <Navigation className="w-5 h-5 text-secondary" /> Listos para Entrega
-            </h2>
-            <span className="bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full text-xs font-bold font-sans">
-              {pendingDeliveries.length} En cola
-            </span>
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-700 font-semibold text-sm">
+                <PackageCheck className="w-4 h-4 text-secondary" /> Pendientes
+              </div>
+              <p className="text-2xl font-black text-slate-900 mt-2">{pendingDeliveries.length}</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-700 font-semibold text-sm">
+                <Clock3 className="w-4 h-4 text-secondary" /> ETA Promedio
+              </div>
+              <p className="text-2xl font-black text-slate-900 mt-2">{averageEta} min</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-700 font-semibold text-sm">
+                <Sparkles className="w-4 h-4 text-secondary" /> Prioridad
+              </div>
+              <p className="text-2xl font-black text-slate-900 mt-2">Alta</p>
+            </div>
           </div>
 
-          <div className="space-y-4">
-            {pendingDeliveries.length === 0 ? (
-              <div className="py-12 bg-white rounded-2xl border border-dashed border-gray-200 text-center text-slate-400 p-6 shadow-sm">
-                <CheckCircle className="w-10 h-10 text-emerald-500 bg-emerald-50 rounded-full p-2 mx-auto" />
-                <p className="font-bold text-sm text-slate-700 mt-2">¡Completamente al día!</p>
-                <p className="text-xs text-slate-400 mt-1 leading-normal">No hay pizzas listas esperando delivery en este momento. Las comandas siguen en horno.</p>
-              </div>
-            ) : (
-              <AnimatePresence>
-                {pendingDeliveries.map(order => {
-                  const isDelivering = activeRouteId === order.id;
-                  
-                  return (
-                    <motion.div 
-                      key={order.id}
-                      initial={{ scale: 0.95 }}
-                      animate={{ scale: 1 }}
-                      exit={{ scale: 0.95, opacity: 0, x: -100 }}
-                      className={`bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between transition-all ${
-                        isDelivering ? 'ring-2 ring-secondary' : 'hover:border-slate-350'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <span className="text-[10px] font-bold text-primary tracking-wider uppercase block mb-1">
-                            Pedido #{order.id}
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 font-display">
+                <Navigation className="w-5 h-5 text-secondary" /> Pedidos listos para entregar
+              </h2>
+              <span className="bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full text-xs font-bold font-sans">
+                {pendingDeliveries.length} en cola
+              </span>
+            </div>
+            <div className="space-y-3 p-4">
+              {pendingDeliveries.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 p-6 rounded-2xl border border-dashed border-gray-200">
+                  <CheckCircle className="w-10 h-10 text-emerald-500 bg-emerald-50 rounded-full p-2 mx-auto" />
+                  <p className="font-bold text-sm text-slate-700 mt-2">Sin entregas por ahora</p>
+                  <p className="text-xs text-slate-400 mt-1">Los pedidos aparecerán aquí cuando estén listos para envío.</p>
+                </div>
+              ) : (
+                <AnimatePresence>
+                  {pendingDeliveries.map(order => {
+                    const isSelected = selectedOrder?.id === order.id;
+                    const isDelivering = activeRouteId === order.id;
+                    return (
+                      <motion.button
+                        key={order.id}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        type="button"
+                        onClick={() => setSelectedOrderId(order.id)}
+                        className={`w-full text-left rounded-2xl border p-4 transition-all ${
+                          isSelected ? 'border-secondary bg-emerald-50 shadow-sm' : 'border-slate-100 bg-white hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start gap-3">
+                          <div>
+                            <p className="text-[10px] font-bold text-primary tracking-wider uppercase">Pedido #{order.id}</p>
+                            <h3 className="font-bold text-slate-900 text-base">{order.customerName}</h3>
+                            <p className="text-xs text-slate-500 mt-1">{order.address}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-black text-slate-900">S/ {order.total.toFixed(2)}</p>
+                            <p className="text-[11px] text-slate-400">{order.elapsedMinutes + 8} min</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100">
+                          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${order.status === 'ready' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {order.status === 'ready' ? 'Listo' : 'En proceso'}
                           </span>
-                          <h3 className="font-bold text-slate-900 text-base">{order.customerName}</h3>
+                          <div className="flex items-center gap-2 text-slate-500 text-xs">
+                            <Phone className="w-3.5 h-3.5" /> {order.phone}
+                          </div>
                         </div>
-                        <div className="flex flex-col items-end">
-                          <span className="font-extrabold text-slate-900 font-display text-base">S/ {order.total.toFixed(2)}</span>
-                          <span className="text-[11px] text-gray-400 italic">Pre-pago QR</span>
+                          <div className="mt-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleStartDelivery(order.id);
+                            }}
+                            disabled={isDelivering}
+                            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 ${
+                              isDelivering
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                : 'bg-primary-container text-on-primary-container hover:bg-primary hover:text-white'
+                            }`}
+                          >
+                            <Navigation className="w-4 h-4" /> Iniciar Ruta
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleCompleteDelivery(order.id);
+                            }}
+                            className="flex-1 py-2.5 px-3 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-800"
+                          >
+                            <CheckCircle className="w-4 h-4" /> Entregado
+                          </button>
                         </div>
-                      </div>
-
-                      {/* address phone details */}
-                      <div className="space-y-3.5 border-b border-gray-50 pb-4 mb-4 text-xs font-sans text-slate-600">
-                        <div className="flex items-start gap-2.5">
-                          <MapPin className="text-primary w-4.5 h-4.5 shrink-0 mt-0.5" />
-                          <span>{order.address || 'Calle de la Huizache 452, Col. Del Valle'}</span>
-                        </div>
-                        <div className="flex items-center gap-2.5">
-                          <Phone className="text-primary w-4.5 h-4.5 shrink-0" />
-                          <span className="font-semibold">{order.phone || '+51 987 654 321'}</span>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <button 
-                          onClick={() => handleStartDelivery(order.id)}
-                          disabled={isDelivering}
-                          className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer ${
-                            isDelivering 
-                              ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200' 
-                              : 'bg-primary-container text-on-primary-container hover:bg-primary hover:text-white'
-                          }`}
-                        >
-                          <Navigation className="w-4 h-4" /> Iniciar Ruta
-                        </button>
-                        
-                        <button 
-                          onClick={() => handleCompleteDelivery(order.id)}
-                          className="border-2 border-slate-200 text-slate-700 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-800 py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer active:scale-95"
-                        >
-                          <CheckCircle className="w-4 h-4" /> Entregado
-                        </button>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            )}
+                        {isGeocoding && isSelected && (
+                          <p className="text-xs text-slate-400 mt-2">Geocodificando dirección...</p>
+                        )}
+                      </motion.button>
+                    );
+                  })}
+                </AnimatePresence>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Right Column: Routing Map Card */}
-        <div className="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden relative flex flex-col h-[550px]">
-          <div className="flex-grow bg-slate-100 relative">
-            <img 
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuDvlfgwwhamWbP3YlUtEjkA2bn9fr-SeQsOr2xBTTOAWG2mq4wjQcTqvnW9dnlafYS6rgiitvYqqgq_CPFDezHrCJ9ADQ4ILt4X35CUfz7EWi5t4vFbVjzyeHaIgsGXeJqJFGZPDrxYRpSRMDEjsdEmaryjOfRDVqKi2Wq5R50CMH8K-7Q3erB4UV9yhEfIKfRiV-b3ch9uNAu_zu6RoqOsJTi-d56ofVAeUMyIa_3-s22k1_U-n6O3KZX9TehT-g7UOyBjiRXiAk8" 
-              alt="Plano GPS"
-              className="w-full h-full object-cover opacity-80"
-            />
-
-            {/* Simulated overlays markers on map */}
-            <div className="absolute top-1/4 left-1/4 flex flex-col items-center pointer-events-none">
-              <div className="w-8 h-8 bg-emerald-950 text-white rounded-full flex items-center justify-center shadow-lg animate-pulse border border-white">
-                <StoreIcon className="w-4 h-4" />
+        <div className="lg:col-span-7 space-y-4">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div>
+                <p className="text-[10px] uppercase font-bold text-gray-400">Mapa de Google</p>
+                <h3 className="text-lg font-bold text-slate-800">Rutas desde Nuevo Chimbote</h3>
               </div>
-              <span className="mt-1 bg-white px-2 py-0.5 border border-slate-100 rounded shadow-sm text-[9px] font-black text-emerald-950 uppercase">Tienda</span>
-            </div>
-
-            <div className="absolute bottom-1/3 right-1/4 flex flex-col items-center pointer-events-none">
-              <div className="w-8 h-8 bg-lime-500 text-white rounded-full flex items-center justify-center shadow-lg border border-white">
-                <MapPin className="w-4 h-4 fill-white text-secondary" />
-              </div>
-              <span className="mt-1 bg-white px-2 py-0.5 border border-slate-100 rounded shadow-sm text-[9px] font-bold text-slate-800">Ricardo Gareca</span>
-            </div>
-
-            {/* Path SVG trace over the map preview */}
-            <svg className="absolute inset-0 w-full h-full pointer-events-none" fill="none" viewBox="0 0 600 450">
-              <path 
-                d="M170 110 Q 300 180 430 250" 
-                stroke="#536500" 
-                strokeDasharray="6 6" 
-                strokeWidth="3.5" 
-                className="opacity-55"
-              ></path>
-            </svg>
-          </div>
-
-          {/* Bottom float route stats dashboard card */}
-          <div className="p-5 bg-white border-t border-gray-100 flex items-center justify-between">
-            <div className="flex gap-6 items-center">
-              <div className="flex flex-col">
-                <span className="text-[10px] uppercase font-bold text-gray-400">Ruta Recomendada</span>
-                <span className="text-secondary font-extrabold text-sm mt-0.5">Av. Larco &rsaquo; Miraflores</span>
-              </div>
-              <div className="w-px h-8 bg-gray-200"></div>
-              <div className="flex flex-col font-display text-sm text-slate-850">
-                <span className="text-[10px] uppercase font-bold text-gray-400">Tiempo Est.</span>
-                <span className="font-extrabold mt-0.5">18 min</span>
-              </div>
-              <div className="w-px h-8 bg-gray-200"></div>
-              <div className="flex flex-col font-display text-sm text-slate-850">
-                <span className="text-[10px] uppercase font-bold text-gray-400">Distancia</span>
-                <span className="font-extrabold mt-0.5">3.4 km</span>
+              <div className="text-right">
+                <p className="text-[10px] uppercase font-bold text-gray-400">Destino</p>
+                <p className="text-sm font-black text-slate-900">{selectedOrder?.customerName ?? 'Sin pedido seleccionado'}</p>
               </div>
             </div>
 
-            <button 
-              onClick={() => alert('Waze/Google Maps: Vinculando coordenadas GPS al móvil en segundo plano...')} 
-              className="bg-emerald-950 text-white font-bold text-xs py-2.5 px-5 rounded-xl hover:bg-emerald-900 transition-colors flex items-center gap-1.5 cursor-pointer"
-            >
-              <Map className="w-4 h-4" /> Abrir Ruta GPS
-            </button>
+            <div className="relative h-[520px]">
+              <div ref={mapContainerRef} className="w-full h-full" />
+              {mapError && (
+                <div className="absolute left-4 top-4 rounded-2xl bg-white/90 border border-slate-200 p-3 text-xs text-slate-700 max-w-sm shadow-sm">
+                  <p className="font-semibold">Error en el mapa</p>
+                  <p>{mapError}</p>
+                </div>
+              )}
+              {routeInfo && (
+                <div className="absolute right-4 top-4 rounded-2xl bg-white/90 border border-slate-200 p-3 text-xs text-slate-700 max-w-sm shadow-sm">
+                  <p className="font-semibold">Ruta calculada</p>
+                  <p>{routeInfo.distance} km · {routeInfo.duration} min</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-slate-100 bg-slate-50">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <p className="text-[10px] uppercase text-gray-400 font-bold">Origen</p>
+                  <p className="font-black text-slate-900">Mike’s Oven Pizza</p>
+                  <p className="text-xs text-slate-500">Nuevo Chimbote, Perú</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-gray-400 font-bold">Destino</p>
+                  <p className="font-black text-slate-900">{selectedOrder ? routeAddress : 'Selecciona un pedido'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-gray-400 font-bold">Coordenadas</p>
+                  <p className="font-black text-slate-900">Origen: {`${ORIGIN_COORDS.lat.toFixed(5)}, ${ORIGIN_COORDS.lng.toFixed(5)}`}</p>
+                  <p className="text-sm text-slate-600 mt-1">Destino: {selectedOrder ? `${destinationCoords?.lat.toFixed(5)}, ${destinationCoords?.lng.toFixed(5)}` : '---'}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-
       </div>
-
     </div>
   );
 }

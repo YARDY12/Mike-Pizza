@@ -82,11 +82,21 @@ const resolveImage = (image?: string) => {
   return 'https://via.placeholder.com/96?text=Sin+imagen';
 };
 
+const resolveItemName = (...values: Array<string | null | undefined>) => {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) return trimmed;
+    }
+  }
+  return 'Producto sin nombre';
+};
+
 const clearStoredUser = () => {
   localStorage.removeItem(USER_STORAGE_KEY);
 };
 
-const SIMULATED_COOK_ORDER_ID = 'sim-cook-gabriel-marreros';
+const SIMULATED_COOK_ORDER_ID = '9430';
 const SIMULATED_COOK_ORDER: ServerOrder = {
   id: SIMULATED_COOK_ORDER_ID,
   customerName: 'Gabriel Marreros',
@@ -126,14 +136,115 @@ const SIMULATED_COOK_ORDER: ServerOrder = {
   ],
 };
 
+const SIMULATED_DELIVERY_ORDERS: ServerOrder[] = [
+  {
+    id: '9430',
+    customerName: 'Gabriel Marreros',
+    phone: '+51 912 000 123',
+    address: 'Avenida La Mar 1234, San Isidro',
+    district: 'San Isidro',
+    total: 35.80,
+    status: 'ready',
+    elapsedMinutes: 5,
+    deliveryMethod: 'delivery',
+    isSimulated: true,
+    items: [
+      {
+        cartId: 'sim-gabriel-1',
+        id: 'pizza-hawaiana',
+        name: 'Pizza Hawaiana',
+        price: 15.90,
+        quantity: 1,
+        image: 'https://via.placeholder.com/96?text=Hawaiana',
+      },
+      {
+        cartId: 'sim-gabriel-2',
+        id: 'pizza-americana',
+        name: 'Pizza Americana',
+        price: 14.90,
+        quantity: 1,
+        image: 'https://via.placeholder.com/96?text=Americana',
+      },
+      {
+        cartId: 'sim-gabriel-3',
+        id: 'inka-cola',
+        name: 'Gaseosa Inka Cola 500ml',
+        price: 5.00,
+        quantity: 1,
+        image: 'https://via.placeholder.com/96?text=Inka+Cola',
+      },
+    ],
+  },
+  {
+    id: 'sim-delivery-ana-torres',
+    customerName: 'Ana Torres',
+    phone: '+51 987 654 321',
+    address: 'Calle Los Álamos 456, Surco',
+    district: 'Surco',
+    total: 48.50,
+    status: 'processing',
+    elapsedMinutes: 8,
+    deliveryMethod: 'delivery',
+    isSimulated: true,
+    items: [
+      {
+        cartId: 'sim-delivery-ana-1',
+        id: 'pizza-margherita',
+        name: 'Pizza Margherita',
+        price: 32.00,
+        quantity: 1,
+        image: 'https://via.placeholder.com/96?text=Margherita',
+      },
+      {
+        cartId: 'sim-delivery-ana-2',
+        id: 'coca-cola',
+        name: 'Coca Cola 500ml',
+        price: 8.50,
+        quantity: 1,
+        image: 'https://via.placeholder.com/96?text=Coca+Cola',
+      },
+    ],
+  },
+  {
+    id: 'sim-delivery-luis-ramirez',
+    customerName: 'Luis Ramírez',
+    phone: '+51 998 112 233',
+    address: 'Jr. Las Flores 789, Barranco',
+    district: 'Barranco',
+    total: 29.90,
+    status: 'ready',
+    elapsedMinutes: 3,
+    deliveryMethod: 'delivery',
+    isSimulated: true,
+    items: [
+      {
+        cartId: 'sim-delivery-luis-1',
+        id: 'pizza-pepperoni',
+        name: 'Pizza Pepperoni',
+        price: 24.90,
+        quantity: 1,
+        image: 'https://via.placeholder.com/96?text=Pepperoni',
+      },
+      {
+        cartId: 'sim-delivery-luis-2',
+        id: 'agua',
+        name: 'Agua Mineral',
+        price: 5.00,
+        quantity: 1,
+        image: 'https://via.placeholder.com/96?text=Agua',
+      },
+    ],
+  },
+];
+
 const mapPedidoToServerOrder = (pedido: PedidoKitchenDto): ServerOrder => ({
   id: String(pedido.idPedido ?? pedido.codigo ?? `pedido-${Date.now()}`),
   customerName: pedido.clienteNombre,
   phone: pedido.telefono,
-  address: pedido.direccion,
-  district: pedido.distrito,
-  total: pedido.items.reduce((sum, item) => sum + item.precioUnitario * item.cantidad, 0),
-  status: pedido.estado?.toLowerCase() === 'solicitado' || pedido.estado?.toLowerCase() === 'pagado' ? 'requested'
+  address: [pedido.direccion?.calle, pedido.direccion?.numero].filter(Boolean).join(' '),
+  district: pedido.direccion?.distrito,
+  total: typeof pedido.total === 'number' ? pedido.total : pedido.items.reduce((sum, item) => sum + item.precioUnitario * item.cantidad, 0),
+  status: pedido.estado?.toLowerCase() === 'solicitado' || pedido.estado?.toLowerCase() === 'pagado' || pedido.estado?.toLowerCase() === 'pendiente_pago' ? 'requested'
     : pedido.estado?.toLowerCase() === 'en proceso' || pedido.estado?.toLowerCase() === 'processing' ? 'processing'
     : pedido.estado?.toLowerCase() === 'listo' || pedido.estado?.toLowerCase() === 'ready' || pedido.estado?.toLowerCase() === 'listo_para_reparto' || pedido.estado?.toLowerCase() === 'listo_para_recojo' ? 'ready'
     : pedido.estado?.toLowerCase() === 'entregado' || pedido.estado?.toLowerCase() === 'delivered' ? 'delivered'
@@ -142,8 +253,8 @@ const mapPedidoToServerOrder = (pedido: PedidoKitchenDto): ServerOrder => ({
   deliveryMethod: pedido.tipoEntrega === 'DELIVERY' ? 'delivery' : 'pickup',
   items: pedido.items.map((item, index) => ({
     cartId: `pedido-${pedido.idPedido}-${index}`,
-    id: String(item.id),
-    name: item.nombre,
+    id: String(item.productoId ?? item.idPedidoDetalle ?? index),
+    name: resolveItemName(item.nombreProducto, item.nombre, `Producto ${index + 1}`),
     price: item.precioUnitario,
     quantity: item.cantidad,
     image: resolveImage(undefined),
@@ -221,7 +332,7 @@ export default function App() {
       cartId: `backend-${item.id}`,
       backendItemId: item.id,
       id: String(item.productoId),
-      name: item.nombre,
+      name: resolveItemName(item.nombreProducto, item.nombre, matchedMenuItem?.name, `Producto ${item.productoId}`),
       price: item.precioUnitario,
       image: resolveImage(matchedMenuItem?.image),
       quantity: item.cantidad,
@@ -254,7 +365,7 @@ export default function App() {
 
   const loadBackendCart = async (): Promise<boolean> => {
     try {
-      const carrito = await obtenerCarrito();
+      const carrito = await obtenerCarrito(user.backendUserId);
       setCart(mapBackendCarritoToCartItems(carrito));
       return true;
     } catch (err) {
@@ -268,7 +379,7 @@ export default function App() {
 
     try {
       for (const item of items) {
-        await agregarAlCarrito(buildBackendItemPayload(item));
+        await agregarAlCarrito(buildBackendItemPayload(item), user.backendUserId);
       }
       await loadBackendCart();
     } catch (err) {
@@ -295,7 +406,7 @@ export default function App() {
   const [orders, setOrders] = useState<ServerOrder[]>([
     {
       id: '9421',
-      customerName: 'Eli Flores',
+      customerName: 'Ricardo Gareca',
       phone: '+51 987 654 321',
       address: 'Calle del Sol 234, Miraflores',
       total: 65.00,
@@ -373,6 +484,17 @@ export default function App() {
     setOrders(prev => [SIMULATED_COOK_ORDER, ...prev]);
   }, [activeView, orders]);
 
+  useEffect(() => {
+    if (activeView !== 'delivery-driver') return;
+
+    setOrders(prev => {
+      const existingIds = new Set(prev.map(order => order.id));
+      const missingOrders = SIMULATED_DELIVERY_ORDERS.filter(order => !existingIds.has(order.id));
+      if (!missingOrders.length) return prev;
+      return [...missingOrders, ...prev];
+    });
+  }, [activeView, orders]);
+
   // NOTE: Removed automatic transition for simulated cook orders.
   // The chef should manually mark simulated orders as ready via the UI.
 
@@ -413,7 +535,7 @@ export default function App() {
 
     if (user.isAuthenticated && user.role === 'cliente') {
       try {
-        const carrito = await agregarAlCarrito(buildBackendItemPayload(newItem));
+        const carrito = await agregarAlCarrito(buildBackendItemPayload(newItem), user.backendUserId);
         setCart(mapBackendCarritoToCartItems(carrito));
       } catch (error) {
         console.error('[App] error adding customized item to backend cart', error);
@@ -461,7 +583,7 @@ export default function App() {
 
     if (user.isAuthenticated && user.role === 'cliente') {
       try {
-        const carrito = await agregarAlCarrito(buildBackendItemPayload(newItem));
+        const carrito = await agregarAlCarrito(buildBackendItemPayload(newItem), user.backendUserId);
         setCart(mapBackendCarritoToCartItems(carrito));
       } catch (error) {
         console.error('[App] error adding item to backend cart', error);
@@ -496,7 +618,7 @@ export default function App() {
 
     if (user.isAuthenticated && user.role === 'cliente' && matched.backendItemId != null) {
       try {
-        const carrito = await actualizarCantidadItem(matched.backendItemId, quantity);
+        const carrito = await actualizarCantidadItem(matched.backendItemId, quantity, user.backendUserId);
         setCart(mapBackendCarritoToCartItems(carrito));
       } catch (error) {
         console.error('[App] error updating backend cart item quantity', error);
@@ -513,7 +635,7 @@ export default function App() {
 
     if (user.isAuthenticated && user.role === 'cliente' && matched.backendItemId != null) {
       try {
-        const carrito = await eliminarDelCarrito(matched.backendItemId);
+        const carrito = await eliminarDelCarrito(matched.backendItemId, user.backendUserId);
         setCart(mapBackendCarritoToCartItems(carrito));
       } catch (error) {
         console.error('[App] error removing backend cart item', error);
@@ -529,7 +651,7 @@ export default function App() {
   const handleClearCart = async () => {
     if (user.isAuthenticated && user.role === 'cliente') {
       try {
-        await vaciarCarrito();
+        await vaciarCarrito(user.backendUserId);
         setCart([]);
       } catch (error) {
         console.error('[App] error clearing backend cart', error);
@@ -549,11 +671,12 @@ export default function App() {
     return 'cliente';
   };
 
-  const handleLoginSuccess = (payload: { fullName: string; email: string; roles: string[]; phone?: string }) => {
+  const handleLoginSuccess = (payload: { fullName: string; email: string; roles: string[]; phone?: string; backendUserId?: number }) => {
     console.log('[App] handleLoginSuccess payload', payload);
     const role = mapBackendRolesToAppRole(payload.roles);
     const phone = getStoredUserPhone(payload.email, payload.phone);
     const userProfile: UserProfile = {
+      backendUserId: payload.backendUserId,
       fullName: payload.fullName,
       email: payload.email,
       phone,
@@ -586,9 +709,10 @@ export default function App() {
     }
   };
 
-  const handleRegisterSuccess = (fullName: string, email: string, phone?: string) => {
+  const handleRegisterSuccess = (fullName: string, email: string, phone?: string, backendUserId?: number) => {
     console.log('[App] handleRegisterSuccess values', { fullName, email, phone });
     const userProfile: UserProfile = {
+      backendUserId,
       fullName,
       email,
       phone,
@@ -683,17 +807,19 @@ export default function App() {
       tipoEntrega: orderData.deliveryMethod === 'delivery' ? 'DELIVERY' : 'RECOGER',
       metodoPago: 'SIMULADO',
       direccion: orderData.deliveryMethod === 'delivery' ? {
+        alias: 'Casa',
+        calle: orderData.address ?? '',
+        distrito: orderData.district,
+        ciudad: 'Lima',
         lat: orderData.lat ?? 0,
         lng: orderData.lng ?? 0,
-        address: orderData.address ?? '',
-        district: orderData.district
       } : undefined,
     };
 
     try {
-      const response = await checkoutPedido(payload);
+      const response = await checkoutPedido(payload, user.backendUserId);
       const newOrder: ServerOrder = {
-        id: response.pedidoId,
+        id: String(response.pedidoId),
         customerName: user.fullName || 'Invitado Rápido',
         phone: user.phone || '+51 987 654 321',
         address: orderData.address || 'Calle Las Camelias 412',
@@ -708,7 +834,7 @@ export default function App() {
 
       if (user.isAuthenticated && user.role === 'cliente') {
         try {
-          await vaciarCarrito();
+          await vaciarCarrito(user.backendUserId);
         } catch (e) {
           console.warn('[App] could not clear backend cart after checkout', e);
         }
@@ -717,7 +843,7 @@ export default function App() {
       setOrders(prev => [newOrder, ...prev]);
       setRecentCheckoutOrder(newOrder);
       setCart([]);
-      triggerToast(`Pedido ${response.pedidoId} creado. Revisa el link de pago.`, 'success');
+      triggerToast(`Pedido ${response.pedidoId} creado correctamente.`, 'success');
       handleNavigate('track-order');
     } catch (error: any) {
       // Improved error logging for backend response inspection
@@ -826,6 +952,7 @@ export default function App() {
               tokenStorage.clear();
               clearStoredUser();
               setUser({
+                backendUserId: undefined,
                 fullName: '',
                 email: '',
                 isAuthenticated: false,
@@ -900,7 +1027,6 @@ export default function App() {
             onSimulateOrder={() => {
               if (orders.some(o => o.id === SIMULATED_COOK_ORDER_ID)) return;
               setOrders(prev => [SIMULATED_COOK_ORDER, ...prev]);
-              setCookSimulationTriggered(false);
               triggerToast('Pedido simulado insertado: Gabriel Marreros', 'success');
             }}
           />

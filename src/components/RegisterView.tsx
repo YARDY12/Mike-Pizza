@@ -6,7 +6,7 @@ import { tokenStorage } from '../api/tokenStorage';
 
 interface RegisterViewProps {
   onNavigate: (view: string) => void;
-  onRegisterSuccess: (fullName: string, email: string, phone?: string) => void;
+  onRegisterSuccess: (fullName: string, email: string, phone?: string, backendUserId?: number) => void;
 }
 
 export default function RegisterView({ onNavigate, onRegisterSuccess }: RegisterViewProps) {
@@ -57,9 +57,10 @@ export default function RegisterView({ onNavigate, onRegisterSuccess }: Register
         fullName: registeredName,
         email: res.email ?? email,
         phone: phone.trim() || res.telefono || (res as any).phone || undefined,
+        backendUserId: typeof res.idUsuario === 'number' ? res.idUsuario : undefined,
       };
       console.log('[RegisterView] register payload sent to app', registerPayload);
-      onRegisterSuccess(registerPayload.fullName, registerPayload.email, registerPayload.phone);
+      onRegisterSuccess(registerPayload.fullName, registerPayload.email, registerPayload.phone, registerPayload.backendUserId);
     } catch (err: any) {
       console.error('[RegisterView] register error', err);
       const status = err?.response?.status;

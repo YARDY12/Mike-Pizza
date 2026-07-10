@@ -1,11 +1,11 @@
 import { api } from './http';
 
 export interface SimulatePaymentRequest {
-  pedidoId: string;
+  pedidoId: number;
 }
 
 export interface SimulatePaymentResponse {
-  pedidoId: string;
+  pedidoId: number;
   estado: string;
   waLink?: string;
 }

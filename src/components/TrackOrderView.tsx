@@ -51,7 +51,12 @@ export default function TrackOrderView({ order, onNavigate, onCancelOrder }: Tra
     const handleClick = async () => {
       setLoading(true);
       try {
-        const res = await simulatePayment({ pedidoId: orderId });
+        const numericPedidoId = Number(orderId);
+        if (!Number.isFinite(numericPedidoId)) {
+          throw new Error('ID de pedido no válido para simular pago');
+        }
+
+        const res = await simulatePayment({ pedidoId: numericPedidoId });
         if (res?.waLink) {
           window.open(res.waLink, '_blank', 'noreferrer');
         }

@@ -6,6 +6,16 @@ import {
 } from 'lucide-react';
 import { UserProfile, ServerOrder } from '../types';
 
+const resolveItemName = (...values: Array<string | null | undefined>) => {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) return trimmed;
+    }
+  }
+  return 'Producto sin nombre';
+};
+
 interface ProfileViewProps {
   user: UserProfile;
   orders: ServerOrder[];
@@ -162,37 +172,37 @@ export default function ProfileView({ user, orders, onNavigate, onUpdateProfile,
 
             {isEditing ? (
               <form onSubmit={handleSubmit} className="space-y-4 text-left">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block font-sans">Nombre Completo *</label>
-                    <input
-                      type="text"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block font-sans">Correo Electrónico *</label>
-                    <input
-                      type="email"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block font-sans">Teléfono / Celular (Opcional)</label>
-                    <input
-                      type="tel"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary"
-                      value={phone}
-                      placeholder="Ej: +51 987 654 321"
-                      onChange={(e) => setPhone(e.target.value)}
-                    />
-                  </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block font-sans">Nombre Completo *</label>
+                  <input
+                    type="text"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block font-sans">Correo Electrónico *</label>
+                  <input
+                    type="email"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block font-sans">Teléfono / Celular (Opcional)</label>
+                  <input
+                    type="tel"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary"
+                    value={phone}
+                    placeholder="Ej: +51 987 654 321"
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
                 </div>
 
                 <div className="flex gap-2 justify-end pt-3">
