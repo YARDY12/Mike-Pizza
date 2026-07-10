@@ -1,5 +1,6 @@
 package com.example.mikespizzaspring.controller;
 
+import com.example.mikespizzaspring.dto.PedidoKitchenDto;
 import com.example.mikespizzaspring.model.Pedido;
 import com.example.mikespizzaspring.service.PedidoService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -7,7 +8,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Optional;
 
 
 @RestController
@@ -30,9 +30,8 @@ public class PedidoController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Pedido> getById(@PathVariable Long id) {
-        Optional<Pedido> pedido = pedidoService.findById(id);
-        return pedido.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    public ResponseEntity<PedidoKitchenDto> getById(@PathVariable Long id) {
+        return ResponseEntity.ok(pedidoService.obtenerPedidoConDetalles(id));
     }
 
     @DeleteMapping("/{id}")

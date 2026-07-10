@@ -1,14 +1,22 @@
 package com.example.mikespizzaspring.service;
 
 import com.example.mikespizzaspring.model.Pedido;
+import com.example.mikespizzaspring.model.Producto;
 import com.example.mikespizzaspring.repository.PedidoRepository;
 import com.example.mikespizzaspring.repository.PedidoDetalleRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import jakarta.transaction.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import static org.springframework.http.HttpStatus.BAD_REQUEST;
+import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 import java.util.List;
 import java.util.Optional;
 import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.Map;
 
 import com.example.mikespizzaspring.model.Usuario;
 
@@ -103,6 +111,7 @@ public class PedidoService {
     }
 
     // Create a Pedido (order) from the user's Carrito. Returns the created Pedido.
+    @Transactional
     public Pedido createPedidoFromCarrito(Long usuarioId, com.example.mikespizzaspring.dto.CheckoutRequest req) {
         // fetch carrito
         // Since this service class is in the same package, we'll use field injection added below. Use carritoService to get carrito.
@@ -163,6 +172,9 @@ public class PedidoService {
             com.example.mikespizzaspring.model.PedidoDetalle pd = new com.example.mikespizzaspring.model.PedidoDetalle();
             pd.setPedido(saved);
             var producto = productoRepository.findById(it.getProductoId()).orElse(null);
+            if (producto == null) {
+                throw new ResponseStatusException(BAD_REQUEST, "Producto no encontrado en carrito: id " + it.getProductoId());
+            }
             pd.setProducto(producto);
             pd.setCantidad(it.getCantidad());
             pd.setPrecioUnitario(java.math.BigDecimal.valueOf(it.getPrecioUnitario()));
@@ -170,10 +182,60 @@ public class PedidoService {
             pedidoDetalleRepository.save(pd);
         }
 
-        // clear carrito
-        carritoService.limpiarCarrito(usuarioId);
+        return saved;
+    }
+
+    @Transactional
+    public Pedido confirmarPagoSimulado(Long pedidoId) {
+        Pedido pedido = pedidoRepository.findById(pedidoId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Pedido no encontrado"));
+
+        if ("PAGADO".equalsIgnoreCase(pedido.getEstado())) {
+            return pedido;
+        }
+
+        var detalles = pedidoDetalleRepository.findByPedido_IdPedido(pedido.getIdPedido());
+        if (detalles == null || detalles.isEmpty()) {
+            throw new ResponseStatusException(BAD_REQUEST, "El pedido no tiene productos asociados");
+        }
+
+        Map<Long, Integer> cantidadesPorProducto = new HashMap<>();
+        for (var detalle : detalles) {
+            if (detalle.getProducto() == null || detalle.getProducto().getIdProducto() == null) {
+                throw new ResponseStatusException(BAD_REQUEST, "Producto inválido en el detalle del pedido");
+            }
+            cantidadesPorProducto.merge(detalle.getProducto().getIdProducto(), detalle.getCantidad(), Integer::sum);
+        }
+
+        for (Map.Entry<Long, Integer> entry : cantidadesPorProducto.entrySet()) {
+            Producto producto = productoRepository.findByIdForUpdate(entry.getKey())
+                    .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Producto no encontrado"));
+
+            Integer stockActual = producto.getStock() == null ? 0 : producto.getStock();
+            if (stockActual < entry.getValue()) {
+                throw new ResponseStatusException(BAD_REQUEST, "Stock insuficiente para el producto: " + producto.getNombre());
+            }
+
+            producto.setStock(stockActual - entry.getValue());
+            productoRepository.save(producto);
+        }
+
+        pedido.setMetodoPago("SIMULADO");
+        pedido.setEstado("PAGADO");
+        Pedido saved = pedidoRepository.save(pedido);
+
+        Long clienteId = saved.getCliente() != null ? saved.getCliente().getIdUsuario() : null;
+        if (clienteId != null) {
+            carritoService.limpiarCarrito(clienteId);
+        }
 
         return saved;
+    }
+
+    public com.example.mikespizzaspring.dto.PedidoKitchenDto obtenerPedidoConDetalles(Long pedidoId) {
+        Pedido pedido = pedidoRepository.findById(pedidoId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Pedido no encontrado"));
+        return buildKitchenDto(pedido);
     }
 
     // Return list of orders in given state mapped to kitchen DTO
@@ -181,28 +243,7 @@ public class PedidoService {
         var pedidos = pedidoRepository.findByEstado(estado == null ? "PAGADO" : estado);
         java.util.List<com.example.mikespizzaspring.dto.PedidoKitchenDto> out = new java.util.ArrayList<>();
         for (var p : pedidos) {
-            var detalles = pedidoDetalleRepository.findByPedido_IdPedido(p.getIdPedido());
-            java.util.List<com.example.mikespizzaspring.dto.PedidoDetalleDto> items = new java.util.ArrayList<>();
-            for (var d : detalles) {
-                var prod = d.getProducto() != null ? productoRepository.findById(d.getProducto().getIdProducto()).orElse(null) : null;
-                String nombre = prod == null ? null : prod.getNombre();
-                items.add(new com.example.mikespizzaspring.dto.PedidoDetalleDto(d.getIdPedidoDetalle(), d.getProducto() != null ? d.getProducto().getIdProducto() : null, nombre, d.getCantidad(), d.getPrecioUnitario(), d.getSubtotal()));
-            }
-            com.example.mikespizzaspring.dto.DireccionRequest dir = null;
-            if (p.getDireccion() != null) {
-                dir = new com.example.mikespizzaspring.dto.DireccionRequest();
-                dir.setAlias(p.getDireccion().getAlias());
-                dir.setCalle(p.getDireccion().getCalle());
-                dir.setNumero(p.getDireccion().getNumero());
-                dir.setReferencia(p.getDireccion().getReferencia());
-                dir.setDistrito(p.getDireccion().getDistrito());
-                dir.setCiudad(p.getDireccion().getCiudad());
-                dir.setLat(p.getDireccion().getLat());
-                dir.setLng(p.getDireccion().getLng());
-            }
-            String clienteNombre = p.getCliente() != null ? p.getCliente().getNombre() + " " + p.getCliente().getApellido() : null;
-            String clienteTelefono = p.getCliente() != null ? p.getCliente().getTelefono() : null;
-            out.add(new com.example.mikespizzaspring.dto.PedidoKitchenDto(p.getIdPedido(), p.getCodigo(), p.getTipoEntrega(), p.getEstado(), clienteNombre, clienteTelefono, dir, p.getSubtotal(), p.getCostoEnvio(), p.getTotal(), p.getFechaCreacion(), items));
+            out.add(buildKitchenDto(p));
         }
         return out;
     }
@@ -221,14 +262,24 @@ public class PedidoService {
             pedido.setEstado("LISTO_PARA_RECOJO");
         }
         pedidoRepository.save(pedido);
-        // return dto
+        return buildKitchenDto(pedido);
+    }
+
+    private com.example.mikespizzaspring.dto.PedidoKitchenDto buildKitchenDto(Pedido pedido) {
         var detalles = pedidoDetalleRepository.findByPedido_IdPedido(pedido.getIdPedido());
         java.util.List<com.example.mikespizzaspring.dto.PedidoDetalleDto> items = new java.util.ArrayList<>();
         for (var d : detalles) {
             var prod = d.getProducto() != null ? productoRepository.findById(d.getProducto().getIdProducto()).orElse(null) : null;
             String nombre = prod == null ? null : prod.getNombre();
-            items.add(new com.example.mikespizzaspring.dto.PedidoDetalleDto(d.getIdPedidoDetalle(), d.getProducto() != null ? d.getProducto().getIdProducto() : null, nombre, d.getCantidad(), d.getPrecioUnitario(), d.getSubtotal()));
+            items.add(new com.example.mikespizzaspring.dto.PedidoDetalleDto(
+                    d.getIdPedidoDetalle(),
+                    d.getProducto() != null ? d.getProducto().getIdProducto() : null,
+                    nombre,
+                    d.getCantidad(),
+                    d.getPrecioUnitario(),
+                    d.getSubtotal()));
         }
+
         com.example.mikespizzaspring.dto.DireccionRequest dir = null;
         if (pedido.getDireccion() != null) {
             dir = new com.example.mikespizzaspring.dto.DireccionRequest();
@@ -241,8 +292,21 @@ public class PedidoService {
             dir.setLat(pedido.getDireccion().getLat());
             dir.setLng(pedido.getDireccion().getLng());
         }
+
         String clienteNombre = pedido.getCliente() != null ? pedido.getCliente().getNombre() + " " + pedido.getCliente().getApellido() : null;
         String clienteTelefono = pedido.getCliente() != null ? pedido.getCliente().getTelefono() : null;
-        return new com.example.mikespizzaspring.dto.PedidoKitchenDto(pedido.getIdPedido(), pedido.getCodigo(), pedido.getTipoEntrega(), pedido.getEstado(), clienteNombre, clienteTelefono, dir, pedido.getSubtotal(), pedido.getCostoEnvio(), pedido.getTotal(), pedido.getFechaCreacion(), items);
+        return new com.example.mikespizzaspring.dto.PedidoKitchenDto(
+                pedido.getIdPedido(),
+                pedido.getCodigo(),
+                pedido.getTipoEntrega(),
+                pedido.getEstado(),
+                clienteNombre,
+                clienteTelefono,
+                dir,
+                pedido.getSubtotal(),
+                pedido.getCostoEnvio(),
+                pedido.getTotal(),
+                pedido.getFechaCreacion(),
+                items);
     }
 }

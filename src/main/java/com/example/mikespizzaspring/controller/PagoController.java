@@ -34,24 +34,22 @@ public class PagoController {
         if (req == null || req.getPedidoId() == null) {
             return ResponseEntity.badRequest().build();
         }
-        Pedido pedido = pedidoService.findById(req.getPedidoId()).orElse(null);
+        Pedido pedido = pedidoService.confirmarPagoSimulado(req.getPedidoId());
         if (pedido == null) return ResponseEntity.notFound().build();
-
-        pedido.setMetodoPago("SIMULADO");
-        pedido.setEstado("PAGADO");
-        pedidoService.save(pedido);
 
         String waLink = null;
         // if delivery, try to assign a repartidor
         if (pedido.getTipoEntrega() != null && pedido.getTipoEntrega().equalsIgnoreCase("DELIVERY")) {
-            List<UsuarioRol> repartidores = usuarioRolRepository.findByRol_Nombre("REPARTIDOR");
-            if (!repartidores.isEmpty()) {
-                var ruser = repartidores.get(0).getUsuario();
-                Reparto reparto = new Reparto();
-                reparto.setPedido(pedido);
-                reparto.setRepartidor(ruser);
-                reparto.setEstado("ASIGNADO");
-                repartoRepository.save(reparto);
+            if (repartoRepository.findByPedido_IdPedido(pedido.getIdPedido()).isEmpty()) {
+                List<UsuarioRol> repartidores = usuarioRolRepository.findByRol_Nombre("REPARTIDOR");
+                if (!repartidores.isEmpty()) {
+                    var ruser = repartidores.get(0).getUsuario();
+                    Reparto reparto = new Reparto();
+                    reparto.setPedido(pedido);
+                    reparto.setRepartidor(ruser);
+                    reparto.setEstado("ASIGNADO");
+                    repartoRepository.save(reparto);
+                }
             }
 
             // build wa.me link to contact customer
