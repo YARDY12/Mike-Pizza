@@ -49,6 +49,9 @@ export default function CartView({
   const [deliveryMethod, setDeliveryMethod] = useState<'Domicilio' | 'Recojo'>('Domicilio');
   const [formAddress, setFormAddress] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'Tarjeta' | 'Yape' | 'Efectivo'>('Tarjeta');
+  const [cardNumber, setCardNumber] = useState('');
+  const [expiry, setExpiry] = useState('');
+  const [cvc, setCvc] = useState('');
   const [formError, setFormError] = useState('');
 
   // Auto-calculated order ID when placed
@@ -97,6 +100,11 @@ export default function CartView({
     }
     if (deliveryMethod === 'Domicilio' && !formAddress) {
       setFormError('La dirección de entrega es obligatoria para envíos a domicilio.');
+      return;
+    }
+
+    if (paymentMethod === 'Tarjeta' && (!cardNumber.trim() || !expiry.trim() || !cvc.trim())) {
+      setFormError('Completa los datos de tu tarjeta para continuar.');
       return;
     }
 
@@ -491,6 +499,82 @@ export default function CartView({
                       <span className="text-xs font-bold">Efectivo</span>
                     </button>
                   </div>
+
+                  {paymentMethod === 'Tarjeta' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3"
+                    >
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-2">Número de tarjeta *</label>
+                        <input
+                          type="text"
+                          value={cardNumber}
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/\s+/g, '').replace(/[^0-9]/g, '');
+                            const formatted = v.match(/.{1,4}/g)?.join(' ') ?? v;
+                            setCardNumber(formatted);
+                          }}
+                          maxLength={19}
+                          placeholder="4000 1234 5678 9010"
+                          className="w-full rounded-lg border border-outline-variant bg-white px-3 py-3 text-sm focus:border-primary focus:outline-none"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-2">Vencimiento *</label>
+                          <input
+                            type="text"
+                            value={expiry}
+                            onChange={(e) => {
+                              let v = e.target.value.replace(/[^0-9]/g, '');
+                              if (v.length >= 2) {
+                                v = `${v.slice(0, 2)}/${v.slice(2, 4)}`;
+                              }
+                              setExpiry(v);
+                            }}
+                            maxLength={5}
+                            placeholder="12/28"
+                            className="w-full rounded-lg border border-outline-variant bg-white px-3 py-3 text-sm focus:border-primary focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-2">CVC *</label>
+                          <input
+                            type="password"
+                            value={cvc}
+                            onChange={(e) => setCvc(e.target.value.replace(/[^0-9]/g, ''))}
+                            maxLength={4}
+                            placeholder="123"
+                            className="w-full rounded-lg border border-outline-variant bg-white px-3 py-3 text-sm focus:border-primary focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {paymentMethod === 'Yape' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 text-sm text-slate-700"
+                    >
+                      <p className="font-bold text-slate-800">Escanea el código QR para pagar</p>
+                      <p className="mt-1">Yape o Plin: 987 654 321</p>
+                    </motion.div>
+                  )}
+
+                  {paymentMethod === 'Efectivo' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm text-slate-700"
+                    >
+                      <p className="font-bold text-slate-800">Pago contra entrega</p>
+                      <p className="mt-1">El repartidor llevará cambio si es necesario.</p>
+                    </motion.div>
+                  )}
                 </div>
 
                 <div className="flex justify-between items-center pt-6 border-t border-surface-container">

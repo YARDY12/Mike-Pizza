@@ -18,10 +18,9 @@ interface CookDashboardProps {
   orders: ServerOrder[];
   onUpdateOrderStatus: (orderId: string, status: 'requested' | 'processing' | 'ready' | 'delivered') => void;
   onMarkPrepared: (orderId: string, action: 'LISTO_ENTREGA' | 'LISTO_RECOGER') => void;
-  onSimulateOrder?: () => void;
 }
 
-export default function CookDashboard({ orders, onUpdateOrderStatus, onMarkPrepared, onSimulateOrder }: CookDashboardProps) {
+export default function CookDashboard({ orders, onUpdateOrderStatus, onMarkPrepared }: CookDashboardProps) {
   const [selectedOrder, setSelectedOrder] = useState<ServerOrder | null>(null);
   const [polledOrders, setPolledOrders] = useState<ServerOrder[]>([]);
 
@@ -74,8 +73,14 @@ export default function CookDashboard({ orders, onUpdateOrderStatus, onMarkPrepa
     };
   }, []);
 
-  // Source orders: prefer polledOrders when available
-  const sourceOrders = polledOrders.length > 0 ? polledOrders : orders;
+  // Merge polled kitchen orders with shared app orders so simulated orders stay visible.
+  const sourceOrders = (() => {
+    const orderMap = new Map<string, ServerOrder>();
+    orders.forEach(order => orderMap.set(order.id, order));
+    polledOrders.forEach(order => orderMap.set(order.id, order));
+    return Array.from(orderMap.values());
+  })();
+
   // Categorize orders
   const requestedOrders = sourceOrders.filter(o => o.status === 'requested');
   const processingOrders = sourceOrders.filter(o => o.status === 'processing');
@@ -107,9 +112,6 @@ export default function CookDashboard({ orders, onUpdateOrderStatus, onMarkPrepa
               <Clock className="w-4 h-4" />
               <span>TIEMPO PROMEDIO: 13m</span>
             </div>
-            {onSimulateOrder && (
-              <button onClick={onSimulateOrder} className="bg-primary text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-primary-600">Insertar pedido simulado</button>
-            )}
           </div>
         </div>
       </div>

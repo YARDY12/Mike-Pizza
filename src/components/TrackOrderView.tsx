@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { CheckCircle, Flame, MapPin, Phone, MessageSquare, Timer, ShoppingBag, HelpCircle, Truck } from 'lucide-react';
 import { CartItem, ServerOrder } from '../types';
-import { simulatePayment } from '../api/pagos';
 
 interface TrackOrderViewProps {
   order: ServerOrder | null;
@@ -43,42 +42,6 @@ export default function TrackOrderView({ order, onNavigate, onCancelOrder }: Tra
 
   const activeOrder = order || fallbackOrder;
   const [timeLeft, setTimeLeft] = useState(activeOrder.elapsedMinutes);
-
-  // Small inner component to handle payment simulation when backend returns the simular endpoint
-  function PaymentButton({ orderId }: { orderId: string }) {
-    const [loading, setLoading] = useState(false);
-
-    const handleClick = async () => {
-      setLoading(true);
-      try {
-        const numericPedidoId = Number(orderId);
-        if (!Number.isFinite(numericPedidoId)) {
-          throw new Error('ID de pedido no válido para simular pago');
-        }
-
-        const res = await simulatePayment({ pedidoId: numericPedidoId });
-        if (res?.waLink) {
-          window.open(res.waLink, '_blank', 'noreferrer');
-        }
-        alert(`Pago: ${res?.estado ?? 'desconocido'}`);
-      } catch (e) {
-        console.error('[TrackOrderView] simulatePayment error', e);
-        alert('No se pudo completar la simulación de pago. Intenta de nuevo.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    return (
-      <button
-        onClick={handleClick}
-        disabled={loading}
-        className="block w-full text-center bg-secondary text-white py-3 rounded-xl font-bold hover:bg-primary transition-colors"
-      >
-        {loading ? 'Procesando...' : 'Simular Pago'}
-      </button>
-    );
-  }
 
   useEffect(() => {
     if (timeLeft <= 0) return;
@@ -312,20 +275,14 @@ export default function TrackOrderView({ order, onNavigate, onCancelOrder }: Tra
             </div>
 
             {activeOrder.paymentUrl && (
-              <div className="space-y-3 pt-3 border-t border-slate-50">
-                <p className="text-sm text-slate-700">Tu pedido fue creado correctamente. Completa el pago para confirmar la preparación.</p>
-                {activeOrder.paymentUrl.includes('simular') ? (
-                  <PaymentButton orderId={activeOrder.id} />
-                ) : (
-                  <a
-                    href={activeOrder.paymentUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block text-center bg-secondary text-white py-3 rounded-xl font-bold hover:bg-primary transition-colors"
-                  >
-                    Ir a Pago Seguro
-                  </a>
-                )}
+              <div className="pt-3 border-t border-slate-50">
+                <p className="text-sm text-slate-700">Tu pedido fue creado correctamente. El pago ya está disponible para la confirmación del pedido.</p>
+              </div>
+            )}
+
+            {!activeOrder.paymentUrl && activeOrder.status === 'requested' && (
+              <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 text-xs text-amber-800">
+                <p className="font-semibold">El pago está siendo procesado. Por favor espera...</p>
               </div>
             )}
 

@@ -138,6 +138,44 @@ const SIMULATED_COOK_ORDER: ServerOrder = {
 
 const SIMULATED_DELIVERY_ORDERS: ServerOrder[] = [
   {
+    id: 'sim-utp-chimbote',
+    customerName: 'Gabriel Marreros',
+    phone: '+51 970 405 891',
+    address: 'UTP Sede Chimbote, Nuevo Chimbote',
+    district: 'Nuevo Chimbote',
+    total: 53.70,
+    status: 'ready',
+    elapsedMinutes: 12,
+    deliveryMethod: 'delivery',
+    isSimulated: true,
+    items: [
+      {
+        cartId: 'sim-utp-1',
+        id: 'pizza-margherita',
+        name: 'Pizza Margherita',
+        price: 32.00,
+        quantity: 1,
+        image: 'https://via.placeholder.com/96?text=Margherita',
+      },
+      {
+        cartId: 'sim-utp-2',
+        id: 'coca-cola',
+        name: 'Coca Cola 500ml',
+        price: 8.50,
+        quantity: 1,
+        image: 'https://via.placeholder.com/96?text=Coca+Cola',
+      },
+      {
+        cartId: 'sim-utp-3',
+        id: 'pan-de-ajo',
+        name: 'Pan de Ajo Rústico',
+        price: 10.00,
+        quantity: 1,
+        image: 'https://via.placeholder.com/96?text=Pan+de+Ajo',
+      },
+    ],
+  },
+  {
     id: '9430',
     customerName: 'Gabriel Marreros',
     phone: '+51 912 000 123',
@@ -179,7 +217,7 @@ const SIMULATED_DELIVERY_ORDERS: ServerOrder[] = [
     id: 'sim-delivery-ana-torres',
     customerName: 'Ana Torres',
     phone: '+51 987 654 321',
-    address: 'Calle Los Álamos 456, Surco',
+    address: 'Au. Panamericana N, Nuevo Chimbote 02710',
     district: 'Surco',
     total: 48.50,
     status: 'processing',
@@ -209,8 +247,8 @@ const SIMULATED_DELIVERY_ORDERS: ServerOrder[] = [
     id: 'sim-delivery-luis-ramirez',
     customerName: 'Luis Ramírez',
     phone: '+51 998 112 233',
-    address: 'Jr. Las Flores 789, Barranco',
-    district: 'Barranco',
+    address: 'Jr. Las Flores 789, San Juan',
+    district: 'Chimbote',
     total: 29.90,
     status: 'ready',
     elapsedMinutes: 3,
@@ -263,13 +301,32 @@ const mapPedidoToServerOrder = (pedido: PedidoKitchenDto): ServerOrder => ({
 });
 
 const mergeKitchenOrders = (existing: ServerOrder[], incoming: ServerOrder[]): ServerOrder[] => {
+  const statusPriority: Record<ServerOrder['status'], number> = {
+    requested: 0,
+    processing: 1,
+    ready: 2,
+    delivered: 3,
+  };
+
   const merged = new Map<string, ServerOrder>();
+
   incoming.forEach(order => merged.set(order.id, order));
+
   existing.forEach(order => {
-    if (!merged.has(order.id)) {
+    const current = merged.get(order.id);
+    if (!current) {
+      merged.set(order.id, order);
+      return;
+    }
+
+    const currentPriority = statusPriority[current.status] ?? 0;
+    const existingPriority = statusPriority[order.status] ?? 0;
+
+    if (existingPriority > currentPriority) {
       merged.set(order.id, order);
     }
   });
+
   return Array.from(merged.values());
 };
 
@@ -281,8 +338,25 @@ const DEFAULT_USER_PROFILE: UserProfile = {
 };
 
 export default function App() {
+  const initialUser = loadStoredUser() ?? DEFAULT_USER_PROFILE;
+  const initialView = (() => {
+    if (!initialUser.isAuthenticated) return 'home';
+    switch (initialUser.role) {
+      case 'mesero':
+        return 'waiter';
+      case 'cocinero':
+        return 'cook';
+      case 'repartidor':
+        return 'delivery-driver';
+      case 'admin':
+        return 'admin';
+      default:
+        return 'home';
+    }
+  })();
+
   // Navigation State
-  const [activeView, setActiveView] = useState<string>('home');
+  const [activeView, setActiveView] = useState<string>(initialView);
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
 
   // Dynamic products list from data.ts
@@ -432,11 +506,12 @@ export default function App() {
         }
       ]
     },
+    SIMULATED_COOK_ORDER,
     {
       id: '8812',
       customerName: 'Maria Fernanda',
       phone: '+51 912 345 678',
-      address: 'Aviación 3410, San Borja',
+      address: 'Aviación 3410, El Acero',
       total: 53.00,
       status: 'ready',
       elapsedMinutes: 15,
@@ -476,13 +551,6 @@ export default function App() {
       ] : []
     }));
   });
-
-  useEffect(() => {
-    if (activeView !== 'cook') return;
-    if (orders.some(order => order.id === SIMULATED_COOK_ORDER_ID)) return;
-
-    setOrders(prev => [SIMULATED_COOK_ORDER, ...prev]);
-  }, [activeView, orders]);
 
   useEffect(() => {
     if (activeView !== 'delivery-driver') return;
@@ -789,6 +857,11 @@ export default function App() {
     address?: string;
     district?: string;
     paymentMethod: 'card' | 'digital_wallet' | 'cash';
+    paymentMethodDetail?: {
+      cardNumber?: string;
+      expiry?: string;
+      cvc?: string;
+    };
     lat?: number;
     lng?: number;
   }) => {
@@ -803,9 +876,16 @@ export default function App() {
       return;
     }
 
+    // Map payment method from UI to backend format
+    const paymentMethodMap: { [key: string]: string } = {
+      'card': 'TARJETA',
+      'digital_wallet': 'BILLETERA_DIGITAL',
+      'cash': 'EFECTIVO',
+    };
+
     const payload: CheckoutRequest = {
       tipoEntrega: orderData.deliveryMethod === 'delivery' ? 'DELIVERY' : 'RECOGER',
-      metodoPago: 'SIMULADO',
+      metodoPago: paymentMethodMap[orderData.paymentMethod] || 'SIMULADO',
       direccion: orderData.deliveryMethod === 'delivery' ? {
         alias: 'Casa',
         calle: orderData.address ?? '',
@@ -892,6 +972,7 @@ export default function App() {
 
   const handleUpdateOrderStatus = async (orderId: string, status: 'requested' | 'processing' | 'ready' | 'delivered') => {
     let targetOrder: ServerOrder | undefined;
+
     setOrders(prev => prev.map(o => {
       if (o.id === orderId) {
         targetOrder = o;
@@ -899,6 +980,16 @@ export default function App() {
       }
       return o;
     }));
+
+    if (targetOrder?.isSimulated) {
+      triggerToast(`Pedido simulado #${orderId} actualizado localmente.`, 'success');
+      return;
+    }
+
+    if (status === 'processing' && targetOrder && targetOrder.status !== 'processing') {
+      triggerToast(`Pedido #${orderId} movido a preparación.`, 'success');
+      return;
+    }
 
     if (status === 'ready' && targetOrder && targetOrder.status !== 'ready' && !targetOrder.isSimulated) {
       const action = targetOrder.deliveryMethod === 'delivery' ? 'LISTO_ENTREGA' : 'LISTO_RECOGER';
@@ -1024,11 +1115,6 @@ export default function App() {
             orders={orders} 
             onUpdateOrderStatus={handleUpdateOrderStatus} 
             onMarkPrepared={handleMarkPedidoPreparado}
-            onSimulateOrder={() => {
-              if (orders.some(o => o.id === SIMULATED_COOK_ORDER_ID)) return;
-              setOrders(prev => [SIMULATED_COOK_ORDER, ...prev]);
-              triggerToast('Pedido simulado insertado: Gabriel Marreros', 'success');
-            }}
           />
         );
       case 'delivery-driver':

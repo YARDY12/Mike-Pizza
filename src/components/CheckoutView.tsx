@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { CreditCard, Truck, Store, MapPin, ShieldCheck, HelpCircle, User, FileText, CheckCircle } from 'lucide-react';
+import { CreditCard, Truck, Store, MapPin, ShieldCheck, CheckCircle, QrCode } from 'lucide-react';
 import { CartItem, UserProfile } from '../types';
 import LocationMap from './LocationMap';
 
@@ -43,21 +43,22 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (deliveryMethod === 'delivery' && !address.trim()) {
       alert('Por favor introduce tu dirección de delivery.');
       return;
     }
+    
     if (paymentMethod === 'card' && (!cardNumber.trim() || !expiry.trim() || !cvc.trim())) {
       alert('Por favor completa los detalles de tu tarjeta.');
       return;
     }
+    
     if (!agreeTerms) {
       alert('Debes aceptar los Términos y Condiciones para continuar.');
       return;
     }
 
-    // Check if district is outside range
-    // If district is Barranco, we can purposefully trigger the "coverage" warning view.
     if (deliveryMethod === 'delivery' && district === 'Barranco') {
       onNavigate('coverage');
       return;
@@ -65,7 +66,7 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
 
     onPlaceOrder({
       deliveryMethod,
-      address: deliveryMethod === 'delivery' ? `${address} ${apt}` : undefined,
+      address: deliveryMethod === 'delivery' ? `${address}${apt ? ' ' + apt : ''}` : undefined,
       district: deliveryMethod === 'delivery' ? district : undefined,
       paymentMethod,
       lat: deliveryMethod === 'delivery' ? mapLat : undefined,
@@ -82,9 +83,9 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
         <span className="text-secondary font-bold">Pago Seguro</span>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Column: Form Fields */}
-        <form onSubmit={handleSubmit} className="lg:col-span-8 space-y-8">
+        <div className="lg:col-span-8 space-y-8">
           <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 font-display">Pago Seguro</h1>
 
           {/* Step 1: Delivery Method */}
@@ -96,21 +97,15 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Delivery Option */}
-              <label 
-                className={`relative flex cursor-pointer rounded-xl border p-5 transition-all ${
-                  deliveryMethod === 'delivery' 
-                    ? 'border-secondary bg-emerald-50/20 ring-1 ring-secondary' 
+              <button
+                type="button"
+                onClick={() => setDeliveryMethod('delivery')}
+                className={`relative flex w-full cursor-pointer rounded-xl border p-5 text-left transition-all ${
+                  deliveryMethod === 'delivery'
+                    ? 'border-secondary bg-emerald-50/20 ring-1 ring-secondary'
                     : 'border-gray-200 bg-white hover:border-gray-300'
                 }`}
               >
-                <input 
-                  type="radio" 
-                  name="delivery_method" 
-                  value="delivery"
-                  checked={deliveryMethod === 'delivery'}
-                  onChange={() => setDeliveryMethod('delivery')}
-                  className="sr-only" 
-                />
                 <span className="flex flex-1 items-center gap-3">
                   <Truck className="text-secondary w-6 h-6 shrink-0" />
                   <span className="flex flex-col">
@@ -121,24 +116,18 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
                 {deliveryMethod === 'delivery' && (
                   <CheckCircle className="text-secondary w-5 h-5 ml-auto self-center shrink-0 fill-secondary text-white" />
                 )}
-              </label>
+              </button>
 
               {/* Pickup Option */}
-              <label 
-                className={`relative flex cursor-pointer rounded-xl border p-5 transition-all ${
-                  deliveryMethod === 'pickup' 
-                    ? 'border-secondary bg-emerald-50/20 ring-1 ring-secondary' 
+              <button
+                type="button"
+                onClick={() => setDeliveryMethod('pickup')}
+                className={`relative flex w-full cursor-pointer rounded-xl border p-5 text-left transition-all ${
+                  deliveryMethod === 'pickup'
+                    ? 'border-secondary bg-emerald-50/20 ring-1 ring-secondary'
                     : 'border-gray-200 bg-white hover:border-gray-300'
                 }`}
               >
-                <input 
-                  type="radio" 
-                  name="delivery_method" 
-                  value="pickup"
-                  checked={deliveryMethod === 'pickup'}
-                  onChange={() => setDeliveryMethod('pickup')}
-                  className="sr-only" 
-                />
                 <span className="flex flex-1 items-center gap-3">
                   <Store className="text-slate-600 w-6 h-6 shrink-0" />
                   <span className="flex flex-col">
@@ -149,7 +138,7 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
                 {deliveryMethod === 'pickup' && (
                   <CheckCircle className="text-secondary w-5 h-5 ml-auto self-center shrink-0 fill-secondary text-white" />
                 )}
-              </label>
+              </button>
             </div>
 
             {/* Address fields for delivery */}
@@ -250,39 +239,35 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
             </div>
 
             <div className="space-y-4">
-              {/* Card option */}
-              <label 
-                className={`flex cursor-pointer rounded-xl border p-4 items-center transition-all ${
-                  paymentMethod === 'card' 
-                    ? 'border-secondary bg-emerald-50/20 ring-1 ring-secondary' 
+              {/* Card Payment Option */}
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('card')}
+                className={`flex w-full cursor-pointer rounded-xl border p-4 items-center transition-all ${
+                  paymentMethod === 'card'
+                    ? 'border-secondary bg-emerald-50/20 ring-1 ring-secondary'
                     : 'border-gray-200 bg-white hover:border-gray-300'
                 }`}
               >
-                <input 
-                  type="radio" 
-                  name="payment_method" 
-                  value="card"
-                  checked={paymentMethod === 'card'}
-                  onChange={() => setPaymentMethod('card')}
-                  className="sr-only" 
-                />
                 <span className="flex items-center gap-3 w-full">
                   <CreditCard className="text-secondary w-5 h-5 shrink-0" />
-                  <span className="font-bold text-slate-900 text-sm">Tarjeta de Crédito o Débito (Visa, Mastercard, AMEX)</span>
+                  <span className="font-bold text-slate-900 text-sm">Tarjeta de Crédito o Débito</span>
                   {paymentMethod === 'card' && (
                     <CheckCircle className="text-secondary w-5 h-5 ml-auto shrink-0 fill-secondary text-white" />
                   )}
                 </span>
-              </label>
+              </button>
 
+              {/* Card Fields - Conditional Render */}
               {paymentMethod === 'card' && (
                 <motion.div 
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
-                  className="bg-slate-50/50 rounded-xl p-4 border border-gray-150 space-y-4 pl-12"
+                  exit={{ opacity: 0, height: 0 }}
+                  className="bg-slate-50/50 rounded-xl p-4 border border-gray-200 space-y-4 ml-8"
                 >
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Número de Tarjeta</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Número de Tarjeta *</label>
                     <input 
                       type="text"
                       placeholder="4000 1234 5678 9010"
@@ -295,21 +280,17 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
                         for (let i=0, len=match.length; i<len; i+=4) {
                           parts.push(match.substring(i, i+4));
                         }
-                        if (parts.length > 0) {
-                          setCardNumber(parts.join(' '));
-                        } else {
-                          setCardNumber(v);
-                        }
+                        setCardNumber(parts.length > 0 ? parts.join(' ') : v);
                       }}
                       maxLength={19}
-                      className="w-full rounded-xl border-gray-200 bg-white py-3 px-4 focus:ring-secondary focus:border-secondary transition-colors"
+                      className="w-full rounded-lg border border-gray-300 bg-white py-3 px-4 focus:ring-2 focus:ring-secondary focus:border-secondary transition-colors"
                       required={paymentMethod === 'card'}
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">MM/YY</label>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Vencimiento (MM/YY) *</label>
                       <input 
                         type="text"
                         placeholder="12/28"
@@ -323,19 +304,19 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
                           }
                         }}
                         maxLength={5}
-                        className="w-full rounded-xl border-gray-200 bg-white py-3 px-4 focus:ring-secondary focus:border-secondary transition-colors text-center"
+                        className="w-full rounded-lg border border-gray-300 bg-white py-3 px-4 focus:ring-2 focus:ring-secondary focus:border-secondary transition-colors text-center"
                         required={paymentMethod === 'card'}
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">CVC</label>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">CVC *</label>
                       <input 
                         type="password"
                         placeholder="123"
                         value={cvc}
                         onChange={e => setCvc(e.target.value.replace(/[^0-9]/g, ''))}
                         maxLength={4}
-                        className="w-full rounded-xl border-gray-200 bg-white py-3 px-4 focus:ring-secondary focus:border-secondary transition-colors text-center"
+                        className="w-full rounded-lg border border-gray-300 bg-white py-3 px-4 focus:ring-2 focus:ring-secondary focus:border-secondary transition-colors text-center"
                         required={paymentMethod === 'card'}
                       />
                     </div>
@@ -343,87 +324,92 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
                 </motion.div>
               )}
 
-              {/* Plin / Yape */}
-              <label 
-                className={`flex cursor-pointer rounded-xl border p-4 items-center transition-all ${
-                  paymentMethod === 'digital_wallet' 
-                    ? 'border-secondary bg-emerald-50/20 ring-1 ring-secondary' 
+              {/* Digital Wallet Payment Option */}
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('digital_wallet')}
+                className={`flex w-full cursor-pointer rounded-xl border p-4 items-center transition-all ${
+                  paymentMethod === 'digital_wallet'
+                    ? 'border-secondary bg-emerald-50/20 ring-1 ring-secondary'
                     : 'border-gray-200 bg-white hover:border-gray-300'
                 }`}
               >
-                <input 
-                  type="radio" 
-                  name="payment_method" 
-                  value="digital_wallet"
-                  checked={paymentMethod === 'digital_wallet'}
-                  onChange={() => setPaymentMethod('digital_wallet')}
-                  className="sr-only" 
-                />
                 <span className="flex items-center gap-3 w-full">
-                  <span className="p-1.5 bg-gradient-to-tr from-cyan-500 to-indigo-600 rounded-lg text-white font-black text-[9px] w-6 h-6 flex items-center justify-center shrink-0">Y/P</span>
-                  <span className="font-bold text-slate-900 text-sm">Plin / Yape (Pago QR Inmediato)</span>
+                  <QrCode className="text-secondary w-5 h-5 shrink-0" />
+                  <span className="font-bold text-slate-900 text-sm">Plin / Yape (Código QR)</span>
                   {paymentMethod === 'digital_wallet' && (
                     <CheckCircle className="text-secondary w-5 h-5 ml-auto shrink-0 fill-secondary text-white" />
                   )}
                 </span>
-              </label>
+              </button>
 
+              {/* QR Display - Conditional Render */}
               {paymentMethod === 'digital_wallet' && (
                 <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="bg-slate-50 p-4 rounded-xl border border-dashed border-gray-300 flex flex-col items-center text-center space-y-2 pl-12"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl p-6 border-2 border-dashed border-secondary/30 flex flex-col items-center text-center space-y-4 ml-8"
                 >
-                  <p className="font-bold text-sm text-slate-700">Código QR para Pago</p>
-                  <p className="text-xs text-gray-500 max-w-sm">Escanea este código desde tu aplicación de Yape o Plin al pulsar "Confirmar Pedido".</p>
-                  <div className="bg-white p-3 rounded-lg border border-gray-200 inline-block">
-                    {/* Simulated QR Code structure */}
-                    <div className="w-32 h-32 bg-slate-100 flex flex-col items-center justify-center relative border border-slate-200">
-                      <div className="grid grid-cols-4 gap-2 w-24 h-24 opacity-60">
-                        {Array.from({ length: 16 }).map((_, i) => (
-                          <div key={i} className={`h-4 w-4 ${i % 3 === 0 || i % 5 === 1 ? 'bg-slate-900' : 'bg-transparent'}`} />
+                  <div className="space-y-1">
+                    <p className="font-bold text-sm text-slate-800">Código QR para Pago Inmediato</p>
+                    <p className="text-xs text-slate-600">Escanea con <span className="font-bold">Yape</span> o <span className="font-bold">Plin</span></p>
+                  </div>
+                  
+                  <div className="bg-white p-4 rounded-lg border-2 border-secondary/20 inline-block shadow-md">
+                    <div className="w-40 h-40 bg-white flex flex-col items-center justify-center relative border-4 border-slate-900">
+                      <div className="absolute top-1 left-1 w-6 h-6 border-2 border-slate-900"></div>
+                      <div className="absolute top-1 right-1 w-6 h-6 border-2 border-slate-900"></div>
+                      <div className="absolute bottom-1 left-1 w-6 h-6 border-2 border-slate-900"></div>
+                      
+                      <div className="grid grid-cols-5 gap-1 w-24 h-24">
+                        {Array.from({ length: 25 }).map((_, i) => (
+                          <div 
+                            key={i} 
+                            className={`h-4 w-4 ${Math.random() > 0.4 ? 'bg-slate-900' : 'bg-white'} border border-slate-200`} 
+                          />
                         ))}
                       </div>
-                      <span className="absolute text-[10px] bg-white px-2 py-0.5 border border-gray-200 font-extrabold text-indigo-700 rounded-md">MIKE'S PIZZA</span>
+                      
+                      <span className="absolute bottom-2 text-[8px] bg-white px-1 font-extrabold text-secondary">S/ {total.toFixed(2)}</span>
                     </div>
                   </div>
-                  <p className="font-bold text-xs text-secondary mt-1">Celular para Plin/Yape: 987 654 321</p>
+
+                  <div className="bg-secondary/10 p-3 rounded-lg w-full text-left text-xs border border-secondary/20">
+                    <p className="font-bold text-slate-800 mb-1">Celulares para transferencia:</p>
+                    <p className="text-slate-700 font-mono">📱 Yape: 987 654 321</p>
+                    <p className="text-slate-700 font-mono">📱 Plin: 987 654 321</p>
+                  </div>
                 </motion.div>
               )}
 
-              {/* Cash option */}
-              <label 
-                className={`flex cursor-pointer rounded-xl border p-4 items-center transition-all ${
-                  paymentMethod === 'cash' 
-                    ? 'border-secondary bg-emerald-50/20 ring-1 ring-secondary' 
+              {/* Cash Payment Option */}
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('cash')}
+                className={`flex w-full cursor-pointer rounded-xl border p-4 items-center transition-all ${
+                  paymentMethod === 'cash'
+                    ? 'border-secondary bg-emerald-50/20 ring-1 ring-secondary'
                     : 'border-gray-200 bg-white hover:border-gray-300'
                 }`}
               >
-                <input 
-                  type="radio" 
-                  name="payment_method" 
-                  value="cash"
-                  checked={paymentMethod === 'cash'}
-                  onChange={() => setPaymentMethod('cash')}
-                  className="sr-only" 
-                />
                 <span className="flex items-center gap-3 w-full">
-                  <span className="font-bold text-secondary font-sans shrink-0">&#x1F4B5;</span>
-                  <span className="font-bold text-slate-900 text-sm">Efectivo contra entrega / Pago contra entrega</span>
+                  <span className="font-bold text-secondary font-sans shrink-0 text-xl">💵</span>
+                  <span className="font-bold text-slate-900 text-sm">Efectivo contra entrega</span>
                   {paymentMethod === 'cash' && (
                     <CheckCircle className="text-secondary w-5 h-5 ml-auto shrink-0 fill-secondary text-white" />
                   )}
                 </span>
-              </label>
+              </button>
 
               {paymentMethod === 'cash' && (
-                <div className="text-xs text-gray-500 pl-12">
+                <div className="text-xs text-gray-500 ml-8">
                   * El repartidor llevará cambio para billetes de S/ 100.00 o S/ 50.00.
                 </div>
               )}
             </div>
           </section>
-        </form>
+        </div>
 
         {/* Right Column: Summary Card */}
         <div className="lg:col-span-4">
@@ -478,33 +464,36 @@ export default function CheckoutView({ cart, user, onNavigate, onPlaceOrder }: C
             </div>
 
             {/* Terms checkbox */}
-            <label className="flex items-start gap-2 cursor-pointer pt-2">
+            <label className="flex items-start gap-2 cursor-pointer p-4 bg-slate-50 rounded-xl border border-slate-200">
               <input 
                 type="checkbox" 
                 checked={agreeTerms}
                 onChange={e => setAgreeTerms(e.target.checked)}
                 className="rounded border-gray-300 text-secondary focus:ring-secondary mt-1 shrink-0"
               />
-              <span className="text-xs text-gray-500 leading-tight">
-                Acepto los <a href="#" onClick={(e) => { e.preventDefault(); alert('Políticas de Mike\'s Oven: tu pizza fresca artesanal se prepara con ingredientes de Km 0 y llega en menos de 45 mins.'); }} className="text-secondary hover:underline font-semibold">Términos y Condiciones</a> y entiendo las políticas de entrega fresca de Mike's Oven.
+              <span className="text-xs text-gray-600 leading-tight">
+                Acepto los <span className="text-secondary font-semibold cursor-pointer hover:underline">Términos y Condiciones</span> y entiendo que mi pedido será preparado tras confirmar el pago.
               </span>
             </label>
 
             {/* Confirm button */}
             <button 
-              onClick={handleSubmit}
+              type="submit"
               className="w-full bg-primary-container text-on-primary-container hover:bg-primary hover:text-white font-extrabold py-4 px-6 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm uppercase tracking-wider text-sm active:scale-95"
             >
-              <ShieldCheck className="w-5 h-5" /> Confirmar Pedido
+              <ShieldCheck className="w-5 h-5" /> 
+              {paymentMethod === 'card' && 'Pagar con Tarjeta'}
+              {paymentMethod === 'digital_wallet' && 'Confirmar con QR'}
+              {paymentMethod === 'cash' && 'Confirmar Pedido'}
             </button>
 
-            <div className="flex justify-center items-center gap-1.5 text-xs text-gray-400 mt-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Conexión cifrada de 256 bits</span>
+            <div className="bg-emerald-50/20 text-slate-800 p-3 rounded-lg border border-emerald-100 text-xs">
+              <p className="font-semibold">💳 Pago Seguro</p>
+              <p className="text-gray-600 mt-1 text-[11px]">Conexión cifrada 256-bit. Tu información está protegida.</p>
             </div>
           </div>
         </div>
-      </div>
+      </form>
     </div>
   );
 }

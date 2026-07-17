@@ -149,23 +149,25 @@ export default function WaiterDashboard({ orders, tables, menuItems, onUpdateTab
           <p className="text-slate-500 font-medium text-sm">Gestiona la comanda física de cada comensal directo al horno de piedra.</p>
         </div>
 
-        <div className="flex gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
-          <button 
-            onClick={() => setActiveTab('map')}
-            className={`px-4 py-2 rounded-lg font-bold text-xs cursor-pointer transition-all ${
-              activeTab === 'map' ? 'bg-white shadow-sm text-secondary' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Mapa de Mesas
-          </button>
-          <button 
-            onClick={() => setActiveTab('fullForm')}
-            className={`px-4 py-2 rounded-lg font-bold text-xs cursor-pointer transition-all ${
-              activeTab === 'fullForm' ? 'bg-white shadow-sm text-secondary' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Formulario Completo (Menú)
-          </button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setActiveTab('map')}
+              className={`px-4 py-2 rounded-lg font-bold text-xs cursor-pointer transition-all ${
+                activeTab === 'map' ? 'bg-white shadow-sm text-secondary' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Mapa de Mesas
+            </button>
+            <button 
+              onClick={() => setActiveTab('fullForm')}
+              className={`px-4 py-2 rounded-lg font-bold text-xs cursor-pointer transition-all ${
+                activeTab === 'fullForm' ? 'bg-white shadow-sm text-secondary' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Formulario Completo (Menú)
+            </button>
+          </div>
         </div>
       </div>
 

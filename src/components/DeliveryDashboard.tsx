@@ -1,8 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Truck, MapPin, Phone, CheckCircle, Navigation, Award, Map, RefreshCw, Clock3, Sparkles, PackageCheck } from 'lucide-react';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import { ServerOrder } from '../types';
 
 interface DeliveryDashboardProps {
@@ -10,27 +8,21 @@ interface DeliveryDashboardProps {
   onUpdateOrderStatus: (orderId: string, status: 'requested' | 'processing' | 'ready' | 'delivered') => void;
 }
 
-// Origin set to: Av. Argentina cuadra 2, Nuevo Chimbote 02710 (geocoded via Nominatim)
-const ORIGIN_COORDS = { lat: -9.1212923, lng: -78.5313757 };
+const ORIGIN_COORDS = { lat: -9.1219701723483, lng: -78.52923568834346 };
 const DELIVERY_COORDS: Record<string, { lat: number; lng: number; label: string }> = {
   '9430': { lat: -9.0895, lng: -78.5904, label: 'Gabriel Marreros' },
   'sim-delivery-ana-torres': { lat: -9.0827, lng: -78.5942, label: 'Ana Torres' },
-  'sim-delivery-luis-ramirez': { lat: -9.0917, lng: -78.6005, label: 'Luis Ramírez' },
+  'sim-delivery-luis-ramirez': { lat: -9.0917, lng: -78.6005, label: 'Luis Ram�rez' },
+  'sim-utp-chimbote': { lat: -9.128586417731901, lng: -78.53422938018002, label: 'UTP Sede Chimbote' },
 };
-
 
 export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: DeliveryDashboardProps) {
   const [activeRouteId, setActiveRouteId] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
-  const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const originMarkerRef = useRef<L.CircleMarker | null>(null);
-  const destinationMarkerRef = useRef<L.Marker | null>(null);
-  const routeLineRef = useRef<L.Polyline | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
-  const geocodeCache = useRef<Record<string, { lat: number; lng: number; label: string }>>({});
+  const [selectedDestination, setSelectedDestination] = useState<{ lat?: number; lng?: number; label: string; address: string } | null>(null);
 
   const pendingDeliveries = orders.filter(o =>
     o.deliveryMethod === 'delivery' && (o.status === 'ready' || o.status === 'processing')
@@ -49,169 +41,97 @@ export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: Deliv
   }, [pendingDeliveries, selectedOrderId]);
 
   useEffect(() => {
-    if (!mapContainerRef.current) return;
-
-    mapRef.current = L.map(mapContainerRef.current, {
-      center: [ORIGIN_COORDS.lat, ORIGIN_COORDS.lng],
-      zoom: 13,
-      zoomControl: true,
-      attributionControl: false,
-    });
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '© OpenStreetMap contributors',
-    }).addTo(mapRef.current);
-
-    originMarkerRef.current = L.circleMarker([ORIGIN_COORDS.lat, ORIGIN_COORDS.lng], {
-      radius: 8,
-      color: '#166534',
-      fillColor: '#22c55e',
-      fillOpacity: 1,
-      weight: 2,
-    }).addTo(mapRef.current).bindPopup("Mike's Oven Pizza - Nuevo Chimbote");
-
-    return () => {
-      mapRef.current?.remove();
-      mapRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!mapRef.current) return;
-
-    let cancelled = false;
-
-    async function resolveAndDraw() {
-      if (!selectedOrder) {
-        if (destinationMarkerRef.current) {
-          destinationMarkerRef.current.remove();
-          destinationMarkerRef.current = null;
-        }
-        if (routeLineRef.current) {
-          routeLineRef.current.remove();
-          routeLineRef.current = null;
-        }
-        setRouteInfo(null);
-        setMapError(null);
-        mapRef.current.setView([ORIGIN_COORDS.lat, ORIGIN_COORDS.lng], 13);
-        return;
-      }
-
-      const cacheKey = `${selectedOrder.address}|${selectedOrder.district}`;
-
-      let destination = DELIVERY_COORDS[String(selectedOrder.id)] ?? null;
-
-      if (!destination) {
-        if (geocodeCache.current[cacheKey]) {
-          destination = geocodeCache.current[cacheKey];
-        } else {
-          try {
-            setIsGeocoding(true);
-            const q = `${selectedOrder.address}, ${selectedOrder.district || ''}, Nuevo Chimbote, Peru`;
-            const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
-            const res = await fetch(url, { headers: { 'User-Agent': 'Mike-Pizza-App/1.0' } });
-            const arr = await res.json();
-            if (arr && arr.length) {
-              destination = { lat: Number(arr[0].lat), lng: Number(arr[0].lon), label: selectedOrder.customerName };
-              geocodeCache.current[cacheKey] = destination;
-            } else {
-              setMapError('No se pudo geocodificar la dirección del pedido. Usando fallback si existe.');
-            }
-          } catch (e) {
-            console.error('[DeliveryDashboard] Geocode error', e);
-            setMapError('Error de geocodificación. Usando fallback si existe.');
-          } finally {
-            setIsGeocoding(false);
-          }
-        }
-      }
-
-      if (!destination) {
-        // nothing to draw
-        return;
-      }
-
-      // update destination marker
-      if (destinationMarkerRef.current) {
-        destinationMarkerRef.current.setLatLng([destination.lat, destination.lng]);
-        destinationMarkerRef.current.setPopupContent(destination.label);
-      } else {
-        destinationMarkerRef.current = L.marker([destination.lat, destination.lng], {
-          icon: L.divIcon({ className: 'text-2xl', html: '📍' }),
-        }).addTo(mapRef.current).bindPopup(destination.label);
-      }
-
-      // Debug info
-      console.log('[DeliveryDashboard] origin coords', ORIGIN_COORDS);
-      console.log('[DeliveryDashboard] destination coords', destination);
-
-      try { mapRef.current?.invalidateSize(); } catch (e) {}
-      mapRef.current?.setView([ORIGIN_COORDS.lat, ORIGIN_COORDS.lng], 13);
-
-      const routeUrl = `https://router.project-osrm.org/route/v1/driving/${ORIGIN_COORDS.lng},${ORIGIN_COORDS.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson`;
-      console.log('[DeliveryDashboard] routeUrl', routeUrl);
-
-      try {
-        const res = await fetch(routeUrl);
-        const data = await res.json();
-        const route = data.routes && data.routes[0] ? data.routes[0] : null;
-
-        if (!route || !route.geometry || !route.geometry.coordinates || route.distance === 0) {
-          console.warn('[DeliveryDashboard] OSRM returned no route or zero distance, using direct line fallback');
-          const coords: [number, number][] = [
-            [ORIGIN_COORDS.lat, ORIGIN_COORDS.lng],
-            [destination.lat, destination.lng],
-          ];
-
-          if (routeLineRef.current) routeLineRef.current.setLatLngs(coords as any);
-          else routeLineRef.current = L.polyline(coords as any, { color: '#f97316', weight: 4, opacity: 0.9, dashArray: '6 6' }).addTo(mapRef.current as L.Map);
-
-          const bounds = L.latLngBounds(coords as any);
-          bounds.extend([ORIGIN_COORDS.lat, ORIGIN_COORDS.lng]);
-          mapRef.current?.fitBounds(bounds, { padding: [40, 40] });
-
-          // haversine
-          const toRad = (v: number) => (v * Math.PI) / 180;
-          const R = 6371;
-          const dLat = toRad(destination.lat - ORIGIN_COORDS.lat);
-          const dLon = toRad(destination.lng - ORIGIN_COORDS.lng);
-          const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(toRad(ORIGIN_COORDS.lat)) * Math.cos(toRad(destination.lat)) * Math.sin(dLon/2) * Math.sin(dLon/2);
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-          const km = Math.round(R * c * 10) / 10;
-          setRouteInfo({ distance: km, duration: Math.round((km/30)*60) });
-          setMapError(null);
-          return;
-        }
-
-        const geo = route.geometry;
-        const coords = geo.coordinates.map((point: [number, number]) => [point[1], point[0]] as [number, number]);
-
-        if (routeLineRef.current) routeLineRef.current.setLatLngs(coords);
-        else routeLineRef.current = L.polyline(coords, { color: '#16a34a', weight: 5, opacity: 0.8 }).addTo(mapRef.current as L.Map);
-
-        const bounds = L.latLngBounds(coords);
-        bounds.extend([ORIGIN_COORDS.lat, ORIGIN_COORDS.lng]);
-        mapRef.current?.fitBounds(bounds, { padding: [40, 40] });
-
-        setRouteInfo({ distance: Math.round(route.distance / 100) / 10, duration: Math.round(route.duration / 60) });
-        setMapError(null);
-      } catch (err) {
-        console.error('[DeliveryDashboard] route fetch error', err);
-        setMapError('No se pudo calcular la ruta. Mostrando línea directa como fallback.');
-      }
+    if (!selectedOrder) {
+      setSelectedDestination(null);
+      setRouteInfo(null);
+      setMapError(null);
+      setIsGeocoding(false);
+      return;
     }
 
-    resolveAndDraw();
+    const cachedDestination = DELIVERY_COORDS[String(selectedOrder.id)] ?? null;
 
-    return () => { cancelled = true; };
+    const computeRouteInfo = (destination: { lat: number; lng: number; label: string }) => {
+      const R = 6371;
+      const toRad = (value: number) => (value * Math.PI) / 180;
+      const dLat = toRad(destination.lat - ORIGIN_COORDS.lat);
+      const dLon = toRad(destination.lng - ORIGIN_COORDS.lng);
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(ORIGIN_COORDS.lat)) * Math.cos(toRad(destination.lat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distance = Math.round((R * c) * 10) / 10;
+      const duration = Math.round((distance / 30) * 60);
+      return { distance, duration };
+    };
+
+    const formatAddressForEmbed = (order: ServerOrder) => {
+      const parts: string[] = [];
+      if (order.address?.trim()) parts.push(order.address.trim());
+      if (order.district?.trim()) parts.push(order.district.trim());
+      parts.push('Peru');
+      return parts.join(', ');
+    };
+
+    const resolveDestination = () => {
+      const destinationAddress = formatAddressForEmbed(selectedOrder);
+      if (!destinationAddress.trim()) {
+        setSelectedDestination(null);
+        setRouteInfo(null);
+        setMapError('No hay una dirección válida para este pedido.');
+        return;
+      }
+
+      const destination = cachedDestination
+        ? { ...cachedDestination, address: destinationAddress }
+        : { label: selectedOrder.customerName || 'Destino', address: destinationAddress };
+
+      setSelectedDestination(destination);
+      setRouteInfo(cachedDestination ? computeRouteInfo(cachedDestination) : null);
+      setMapError(null);
+      setIsGeocoding(false);
+    };
+
+    resolveDestination();
   }, [selectedOrder]);
+
+  const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+
+  const buildMapSrc = () => {
+    if (!selectedDestination) return '';
+    const origin = `${ORIGIN_COORDS.lat},${ORIGIN_COORDS.lng}`;
+    const destination = selectedDestination.lat && selectedDestination.lng
+      ? `${selectedDestination.lat},${selectedDestination.lng}`
+      : selectedDestination.address;
+
+    if (googleMapsApiKey) {
+      return `https://www.google.com/maps/embed/v1/directions?key=${encodeURIComponent(googleMapsApiKey)}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&mode=driving`;
+    }
+
+    const originLat = ORIGIN_COORDS.lat;
+    const originLng = ORIGIN_COORDS.lng;
+    const destLat = selectedDestination.lat ?? ORIGIN_COORDS.lat;
+    const destLng = selectedDestination.lng ?? ORIGIN_COORDS.lng;
+    const minLat = Math.min(originLat, destLat);
+    const maxLat = Math.max(originLat, destLat);
+    const minLng = Math.min(originLng, destLng);
+    const maxLng = Math.max(originLng, destLng);
+    const padding = 0.03;
+    const bbox = `${minLng - padding},${minLat - padding},${maxLng + padding},${maxLat + padding}`;
+    return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${originLat},${originLng}`;
+  };
+
+  const mapSrc = buildMapSrc();
+  const routeLink = selectedDestination
+    ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(`${ORIGIN_COORDS.lat},${ORIGIN_COORDS.lng}`)}&destination=${encodeURIComponent(selectedDestination.lat && selectedDestination.lng ? `${selectedDestination.lat},${selectedDestination.lng}` : selectedDestination.address)}&travelmode=driving`
+    : '';
+  const effectiveMapError = !selectedDestination
+    ? 'Selecciona un pedido para ver la ruta.'
+    : mapError;
 
   const handleStartDelivery = (orderId: string) => {
     setActiveRouteId(orderId);
     setSelectedOrderId(orderId);
     onUpdateOrderStatus(orderId, 'ready');
-    alert(`Ruta de entrega iniciada para la comanda #${orderId}. ¡Buen viaje e impecable conducción!`);
+    alert(`Ruta de entrega iniciada para la comanda #${orderId}. �Buen viaje e impecable conducci�n!`);
   };
 
   const handleCompleteDelivery = (orderId: string) => {
@@ -219,7 +139,7 @@ export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: Deliv
     if (activeRouteId === orderId) {
       setActiveRouteId(null);
     }
-    alert(`¡Pedido #${orderId} registrado como ENTREGADO con éxito!`);
+    alert(`�Pedido #${orderId} registrado como ENTREGADO con �xito!`);
   };
 
   const averageEta = pendingDeliveries.length
@@ -229,17 +149,19 @@ export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: Deliv
   const routeAddress = selectedOrder
     ? [selectedOrder.address, selectedOrder.district].filter(Boolean).join(', ')
     : 'Selecciona un pedido';
-  const destinationCoords = selectedOrder ? DELIVERY_COORDS[String(selectedOrder.id)] : null;
+  const destinationCoords = selectedDestination ?? (selectedOrder ? DELIVERY_COORDS[String(selectedOrder.id)] : null);
+  const formatCurrency = (value?: number) => (typeof value === 'number' ? value.toFixed(2) : '0.00');
+  const formatCoordinate = (value?: number) => (typeof value === 'number' ? value.toFixed(5) : '---');
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 w-full font-sans">
       <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-100 pb-4">
         <div>
           <span className="text-secondary font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 font-sans">
-            <Truck className="w-5 h-5 text-secondary" /> Módulo de Delivery
+            <Truck className="w-5 h-5 text-secondary" /> M�dulo de Delivery
           </span>
           <h1 className="text-3xl font-extrabold text-emerald-950 font-display mt-1">Panel de Delivery</h1>
-          <p className="text-slate-500 font-medium text-sm">Ruta real de entrega desde Mike’s Oven Pizza en Nuevo Chimbote.</p>
+          <p className="text-slate-500 font-medium text-sm">Ruta real de entrega desde Mike�s Oven Pizza en Nuevo Chimbote.</p>
         </div>
 
         <div className="bg-emerald-50 text-emerald-800 px-4 py-3 rounded-xl border border-emerald-100 shadow-sm text-xs font-bold flex items-center gap-2">
@@ -285,7 +207,7 @@ export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: Deliv
                 <div className="py-12 text-center text-slate-400 p-6 rounded-2xl border border-dashed border-gray-200">
                   <CheckCircle className="w-10 h-10 text-emerald-500 bg-emerald-50 rounded-full p-2 mx-auto" />
                   <p className="font-bold text-sm text-slate-700 mt-2">Sin entregas por ahora</p>
-                  <p className="text-xs text-slate-400 mt-1">Los pedidos aparecerán aquí cuando estén listos para envío.</p>
+                  <p className="text-xs text-slate-400 mt-1">Los pedidos aparecer�n aqu� cuando est�n listos para env�o.</p>
                 </div>
               ) : (
                 <AnimatePresence>
@@ -293,14 +215,21 @@ export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: Deliv
                     const isSelected = selectedOrder?.id === order.id;
                     const isDelivering = activeRouteId === order.id;
                     return (
-                      <motion.button
+                      <motion.div
                         key={order.id}
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setSelectedOrderId(order.id)}
-                        className={`w-full text-left rounded-2xl border p-4 transition-all ${
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setSelectedOrderId(order.id);
+                          }
+                        }}
+                        className={`w-full text-left rounded-2xl border p-4 transition-all cursor-pointer ${
                           isSelected ? 'border-secondary bg-emerald-50 shadow-sm' : 'border-slate-100 bg-white hover:border-slate-300'
                         }`}
                       >
@@ -311,7 +240,7 @@ export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: Deliv
                             <p className="text-xs text-slate-500 mt-1">{order.address}</p>
                           </div>
                           <div className="text-right">
-                            <p className="font-black text-slate-900">S/ {order.total.toFixed(2)}</p>
+                            <p className="font-black text-slate-900">S/ {formatCurrency(order.total)}</p>
                             <p className="text-[11px] text-slate-400">{order.elapsedMinutes + 8} min</p>
                           </div>
                         </div>
@@ -323,7 +252,7 @@ export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: Deliv
                             <Phone className="w-3.5 h-3.5" /> {order.phone}
                           </div>
                         </div>
-                          <div className="mt-3 flex gap-2">
+                        <div className="mt-3 flex gap-2">
                           <button
                             type="button"
                             onClick={(event) => {
@@ -351,9 +280,9 @@ export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: Deliv
                           </button>
                         </div>
                         {isGeocoding && isSelected && (
-                          <p className="text-xs text-slate-400 mt-2">Geocodificando dirección...</p>
+                          <p className="text-xs text-slate-400 mt-2">Geocodificando direcci�n...</p>
                         )}
-                      </motion.button>
+                      </motion.div>
                     );
                   })}
                 </AnimatePresence>
@@ -376,18 +305,42 @@ export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: Deliv
             </div>
 
             <div className="relative h-[520px]">
-              <div ref={mapContainerRef} className="w-full h-full" />
-              {mapError && (
-                <div className="absolute left-4 top-4 rounded-2xl bg-white/90 border border-slate-200 p-3 text-xs text-slate-700 max-w-sm shadow-sm">
-                  <p className="font-semibold">Error en el mapa</p>
-                  <p>{mapError}</p>
+              {mapSrc ? (
+                <div className="w-full h-full">
+                  <iframe
+                    title="Mapa de ruta"
+                    src={mapSrc}
+                    className="w-full h-full border-0"
+                    allowFullScreen
+                    loading="lazy"
+                  />
+                </div>
+              ) : (
+                <div className="w-full h-full rounded-2xl bg-slate-100 flex items-center justify-center text-slate-500 text-sm p-6 text-center">
+                  {isGeocoding
+                    ? 'Generando ruta, espera un momento...'
+                    : effectiveMapError
+                      ? effectiveMapError
+                      : 'Selecciona un pedido para ver la ruta en el mapa.'}
                 </div>
               )}
+
               {routeInfo && (
                 <div className="absolute right-4 top-4 rounded-2xl bg-white/90 border border-slate-200 p-3 text-xs text-slate-700 max-w-sm shadow-sm">
                   <p className="font-semibold">Ruta calculada</p>
-                  <p>{routeInfo.distance} km · {routeInfo.duration} min</p>
+                  <p>{routeInfo.distance} km • {routeInfo.duration} min</p>
                 </div>
+              )}
+
+              {routeLink && (
+                <a
+                  href={routeLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="absolute left-4 top-4 rounded-full bg-white/90 border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white"
+                >
+                  Abrir en Google Maps
+                </a>
               )}
             </div>
 
@@ -395,8 +348,8 @@ export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: Deliv
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <p className="text-[10px] uppercase text-gray-400 font-bold">Origen</p>
-                  <p className="font-black text-slate-900">Mike’s Oven Pizza</p>
-                  <p className="text-xs text-slate-500">Nuevo Chimbote, Perú</p>
+                  <p className="font-black text-slate-900">Mike�s Oven Pizza</p>
+                  <p className="text-xs text-slate-500">Nuevo Chimbote, Per�</p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase text-gray-400 font-bold">Destino</p>
@@ -404,8 +357,8 @@ export default function DeliveryDashboard({ orders, onUpdateOrderStatus }: Deliv
                 </div>
                 <div>
                   <p className="text-[10px] uppercase text-gray-400 font-bold">Coordenadas</p>
-                  <p className="font-black text-slate-900">Origen: {`${ORIGIN_COORDS.lat.toFixed(5)}, ${ORIGIN_COORDS.lng.toFixed(5)}`}</p>
-                  <p className="text-sm text-slate-600 mt-1">Destino: {selectedOrder ? `${destinationCoords?.lat.toFixed(5)}, ${destinationCoords?.lng.toFixed(5)}` : '---'}</p>
+                  <p className="font-black text-slate-900">Origen: {`${formatCoordinate(ORIGIN_COORDS.lat)}, ${formatCoordinate(ORIGIN_COORDS.lng)}`}</p>
+                  <p className="text-sm text-slate-600 mt-1">Destino: {selectedOrder ? `${formatCoordinate(destinationCoords?.lat)}, ${formatCoordinate(destinationCoords?.lng)}` : '---'}</p>
                 </div>
               </div>
             </div>
